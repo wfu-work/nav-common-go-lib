@@ -1,0 +1,91 @@
+package apis
+
+import (
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/mojocn/base64Captcha"
+	"go.uber.org/zap"
+	"navfirst.com/nav-common-go-lib/global"
+	"navfirst.com/nav-common-go-lib/response"
+	"navfirst.com/nav-common-go-lib/utils"
+	"navfirst.com/nav-common-go-lib/vos"
+)
+
+type LoginApi struct{}
+
+// 当开启多服务器部署时，替换下面的配置，使用redis共享存储验证码
+// var store = captcha.NewDefaultRedisStore()
+var store = base64Captcha.DefaultMemStore
+
+// Captcha 获取验证码
+// @Summary 获取验证码
+// @Description 获取验证码
+// @Tags 系统模块
+// @Accept json
+// @Produce json
+// @Success 200 {object} response.Response{data=vos.TokenVo,msg=string}  "验证码信息"
+// @Router /login/captcha [get]
+func (a LoginApi) Captcha(c *gin.Context) {
+	openCaptcha := global.NAV_CONFIG.Captcha.OpenCaptcha
+	openCaptchaTimeOut := global.NAV_CONFIG.Captcha.OpenCaptchaTimeOut
+	key := c.ClientIP()
+	v, ok := global.LOCAL_CACHE.Get(key)
+	if !ok {
+		global.LOCAL_CACHE.Set(key, 1, time.Second*time.Duration(openCaptchaTimeOut))
+	}
+	var oc bool
+	if openCaptcha == 0 || openCaptcha < int(utils.InterfaceToInt(v)) {
+		oc = true
+	}
+	// 字符,公式,验证码配置
+	// 生成默认数字的driver
+	driver := base64Captcha.NewDriverDigit(global.NAV_CONFIG.Captcha.ImgHeight, global.NAV_CONFIG.Captcha.ImgWidth, global.NAV_CONFIG.Captcha.KeyLong, 0.7, 80)
+	cp := base64Captcha.NewCaptcha(driver, store)
+	id, b64s, _, err := cp.Generate()
+	if err != nil {
+		global.NAV_LOG.Error("验证码获取失败!", zap.Error(err))
+		response.Fail(nil, c)
+		return
+	}
+	response.Ok(vos.SysCaptcha{
+		CaptchaId:     id,
+		CaptchaImg:    b64s,
+		CaptchaLength: global.NAV_CONFIG.Captcha.KeyLong,
+		OpenCaptcha:   oc,
+	}, c)
+}
+
+// LoginIn 登录
+// @Summary 登录
+// @Description 登录
+// @Tags 系统模块
+// @Accept json
+// @Produce json
+// @Param data body vos.LoginVo true "登录对象"
+// @Success 200 {object} response.Response{data=vos.TokenVo,msg=string}  "登录成功返回token信息"
+// @Router /login/in [post]
+func (a LoginApi) LoginIn(c *gin.Context) {
+	var entity vos.LoginVo
+	err := c.ShouldBindJSON(&entity)
+	if err != nil {
+		response.FailWithMessage(err.Error(), c)
+		return
+	}
+	err = utils.Verify(entity, utils.LoginVerify)
+	if err != nil {
+		response.FailWithMessage(err.Error(), c)
+		return
+	}
+	tokenVo, err := loginService.LoginIn(&entity)
+	if err != nil {
+		response.FailWithMessage(err.Error(), c)
+		return
+	}
+	utils.SetToken(c, tokenVo.Token, int(tokenVo.Expired-time.Now().UnixMilli()))
+	response.OkWithData(tokenVo, c)
+}
+
+func (a LoginApi) LoginOut(c *gin.Context) {
+
+}

@@ -1,0 +1,73 @@
+system:
+  addr: 8888
+  db-type: ""
+  iplimit-count: 15000
+  iplimit-time: 3600
+  oss-type: local
+  router-prefix: /api
+  use-mongo: false
+  use-multipoint: false
+  use-redis: false
+  use-strict-auth: false
+captcha:
+  img-height: 80
+  img-width: 240
+  key-long: 6
+  open-captcha: 0
+  open-captcha-timeout: 3600
+disk-list:
+  - mount-point: /
+jwt:
+  buffer-time: 1d
+  expires-time: 7d
+  issuer: nav-app
+  signing-key: ""
+local:
+  oss-path: ./data/oss
+  proxy-oss-path: /oss
+  cache-path: ./data/cache.json
+  ip2geo-path: ./data/ip2geo
+sqlite:
+  config: ""
+  db-name: ""
+  path: ./data/
+  engine: ""
+  log-mode: error
+  log-zap: false
+  max-idle-conns: 10
+  max-open-conns: 100
+  password: ""
+  port: ""
+  prefix: ""
+  singular: false
+  username: ""
+mysql:
+  host: ""
+  path: ""
+  port: 3306
+  config: ""
+  db-name: ""
+  username: ""
+  password: ""
+  max-idle-conns: 10
+  max-open-conns: 100
+pgsql:
+  host: ""
+  path: ""
+  port: 5432
+  config: "sslmode=disable TimeZone=Asia/Shanghai"
+  db-name: ""
+  username: ""
+  password: ""
+  max-idle-conns: 10
+  max-open-conns: 100
+zap:
+  director: logback
+  encode-level: LowercaseColorLevelEncoder
+  format: console
+  level: info
+  log-in-console: true
+  prefix: '[nav-app-server]'
+  retention-day: -1
+  show-line: true
+  stacktrace-key: stacktrace
