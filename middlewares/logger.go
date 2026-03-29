@@ -10,13 +10,13 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/wfu-work/nav-common-go-lib/domains"
+	"github.com/wfu-work/nav-common-go-lib/global"
+	"github.com/wfu-work/nav-common-go-lib/services"
+	"github.com/wfu-work/nav-common-go-lib/utils"
+	"github.com/wfu-work/nav-common-go-lib/utils/ip2geo"
+	"github.com/wfu-work/nav-common-go-lib/vos"
 	"go.uber.org/zap"
-	"navfirst.com/nav-common-go-lib/domains"
-	"navfirst.com/nav-common-go-lib/global"
-	"navfirst.com/nav-common-go-lib/services"
-	"navfirst.com/nav-common-go-lib/utils"
-	"navfirst.com/nav-common-go-lib/utils/ip2geo"
-	"navfirst.com/nav-common-go-lib/vos"
 )
 
 func ApiLogger() gin.HandlerFunc {

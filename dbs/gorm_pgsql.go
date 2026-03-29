@@ -1,10 +1,10 @@
 package dbs
 
 import (
+	"github.com/wfu-work/nav-common-go-lib/configs"
+	"github.com/wfu-work/nav-common-go-lib/global"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"navfirst.com/nav-common-go-lib/configs"
-	"navfirst.com/nav-common-go-lib/global"
 )
 
 // GormPgSql 初始化 Postgresql 数据库

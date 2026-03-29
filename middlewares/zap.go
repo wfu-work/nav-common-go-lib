@@ -8,10 +8,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wfu-work/nav-common-go-lib/global"
+	"github.com/wfu-work/nav-common-go-lib/utils"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"navfirst.com/nav-common-go-lib/global"
-	"navfirst.com/nav-common-go-lib/utils"
 )
 
 // Zap 获取 zap.Logger

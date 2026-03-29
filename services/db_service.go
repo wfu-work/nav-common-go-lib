@@ -6,9 +6,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/wfu-work/nav-common-go-lib/dbs"
+	"github.com/wfu-work/nav-common-go-lib/global"
 	"gorm.io/gorm"
-	"navfirst.com/nav-common-go-lib/dbs"
-	"navfirst.com/nav-common-go-lib/global"
 )
 
 type DBService struct{}

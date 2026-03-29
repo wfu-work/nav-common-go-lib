@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"navfirst.com/nav-common-go-lib/configs"
-	"navfirst.com/nav-common-go-lib/global"
-	"navfirst.com/nav-common-go-lib/utils"
+	"github.com/wfu-work/nav-common-go-lib/configs"
+	"github.com/wfu-work/nav-common-go-lib/global"
+	"github.com/wfu-work/nav-common-go-lib/utils"
 )
 
 type InitDB struct {

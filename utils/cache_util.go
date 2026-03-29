@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/patrickmn/go-cache"
-	"navfirst.com/nav-common-go-lib/global"
-	"navfirst.com/nav-common-go-lib/vos"
+	"github.com/wfu-work/nav-common-go-lib/global"
+	"github.com/wfu-work/nav-common-go-lib/vos"
 )
 
 func InitCache() {

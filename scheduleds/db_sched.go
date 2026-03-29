@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"navfirst.com/nav-common-go-lib/global"
+	"github.com/wfu-work/nav-common-go-lib/global"
 )
 
 type ClearDB struct {

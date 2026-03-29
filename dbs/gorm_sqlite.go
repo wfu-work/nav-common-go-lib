@@ -1,10 +1,10 @@
 package dbs
 
 import (
+	"github.com/wfu-work/nav-common-go-lib/configs"
+	"github.com/wfu-work/nav-common-go-lib/global"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"navfirst.com/nav-common-go-lib/configs"
-	"navfirst.com/nav-common-go-lib/global"
 )
 
 // GormSqlite 初始化Sqlite数据库

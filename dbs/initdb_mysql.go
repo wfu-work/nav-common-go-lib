@@ -6,11 +6,11 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/wfu-work/nav-common-go-lib/configs"
+	"github.com/wfu-work/nav-common-go-lib/global"
+	"github.com/wfu-work/nav-common-go-lib/utils"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
-	"navfirst.com/nav-common-go-lib/configs"
-	"navfirst.com/nav-common-go-lib/global"
-	"navfirst.com/nav-common-go-lib/utils"
 )
 
 type MysqlInitHandler struct{}

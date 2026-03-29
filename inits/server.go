@@ -15,12 +15,12 @@ import (
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"github.com/swaggo/swag/example/basic/docs"
+	"github.com/wfu-work/nav-common-go-lib/global"
+	"github.com/wfu-work/nav-common-go-lib/middlewares"
+	"github.com/wfu-work/nav-common-go-lib/routers"
+	"github.com/wfu-work/nav-common-go-lib/utils"
+	"github.com/wfu-work/nav-common-go-lib/utils/ip2geo"
 	"go.uber.org/zap"
-	"navfirst.com/nav-common-go-lib/global"
-	"navfirst.com/nav-common-go-lib/middlewares"
-	"navfirst.com/nav-common-go-lib/routers"
-	"navfirst.com/nav-common-go-lib/utils"
-	"navfirst.com/nav-common-go-lib/utils/ip2geo"
 )
 
 type Server interface {

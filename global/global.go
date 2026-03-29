@@ -6,10 +6,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/patrickmn/go-cache"
 	"github.com/redis/go-redis/v9"
+	"github.com/wfu-work/nav-common-go-lib/configs"
 	"go.uber.org/zap"
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
-	"navfirst.com/nav-common-go-lib/configs"
 
 	_ "github.com/gin-gonic/gin"
 

@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/wfu-work/nav-common-go-lib/global"
 	"go.uber.org/zap"
-	"navfirst.com/nav-common-go-lib/global"
 )
 
 // GinRecovery recover掉项目可能出现的panic，并使用zap记录相关日志

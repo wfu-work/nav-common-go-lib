@@ -2,7 +2,7 @@ package routers
 
 import (
 	"github.com/gin-gonic/gin"
-	"navfirst.com/nav-common-go-lib/middlewares"
+	"github.com/wfu-work/nav-common-go-lib/middlewares"
 )
 
 type LoginRouter struct{}

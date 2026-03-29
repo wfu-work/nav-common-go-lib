@@ -1,8 +1,8 @@
 package services
 
 import (
-	"navfirst.com/nav-common-go-lib/domains"
-	"navfirst.com/nav-common-go-lib/global"
+	"github.com/wfu-work/nav-common-go-lib/domains"
+	"github.com/wfu-work/nav-common-go-lib/global"
 )
 
 type UserRoleService struct {

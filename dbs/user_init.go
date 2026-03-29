@@ -4,9 +4,9 @@ import (
 	"context"
 
 	"github.com/pkg/errors"
+	"github.com/wfu-work/nav-common-go-lib/domains"
+	"github.com/wfu-work/nav-common-go-lib/utils"
 	"gorm.io/gorm"
-	"navfirst.com/nav-common-go-lib/domains"
-	"navfirst.com/nav-common-go-lib/utils"
 )
 
 const initOrderUser = initOrderRole + 1

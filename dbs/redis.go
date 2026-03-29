@@ -4,9 +4,9 @@ import (
 	"context"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/wfu-work/nav-common-go-lib/configs"
+	"github.com/wfu-work/nav-common-go-lib/global"
 	"go.uber.org/zap"
-	"navfirst.com/nav-common-go-lib/configs"
-	"navfirst.com/nav-common-go-lib/global"
 )
 
 func InitRedis() error {

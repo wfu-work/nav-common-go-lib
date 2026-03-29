@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/spf13/viper"
-	"navfirst.com/nav-common-go-lib/global"
+	"github.com/wfu-work/nav-common-go-lib/global"
 )
 
 type ConfigService struct {

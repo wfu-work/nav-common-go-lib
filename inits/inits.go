@@ -5,7 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/robfig/cron/v3"
-	"navfirst.com/nav-common-go-lib/scheduleds"
+	"github.com/wfu-work/nav-common-go-lib/scheduleds"
 )
 
 type SysInit struct {

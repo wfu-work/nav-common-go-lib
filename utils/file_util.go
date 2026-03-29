@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/wfu-work/nav-common-go-lib/global"
 	"go.uber.org/zap"
-	"navfirst.com/nav-common-go-lib/global"
 )
 
 // PathExists

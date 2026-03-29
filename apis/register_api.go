@@ -2,9 +2,9 @@ package apis
 
 import (
 	"github.com/gin-gonic/gin"
-	"navfirst.com/nav-common-go-lib/response"
-	"navfirst.com/nav-common-go-lib/utils"
-	"navfirst.com/nav-common-go-lib/vos"
+	"github.com/wfu-work/nav-common-go-lib/response"
+	"github.com/wfu-work/nav-common-go-lib/utils"
+	"github.com/wfu-work/nav-common-go-lib/vos"
 )
 
 type RegisterApi struct{}

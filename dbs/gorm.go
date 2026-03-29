@@ -6,13 +6,13 @@ import (
 	"log"
 	"time"
 
+	"github.com/wfu-work/nav-common-go-lib/configs"
+	"github.com/wfu-work/nav-common-go-lib/domains"
+	"github.com/wfu-work/nav-common-go-lib/global"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 	"gorm.io/gorm/schema"
-	"navfirst.com/nav-common-go-lib/configs"
-	"navfirst.com/nav-common-go-lib/domains"
-	"navfirst.com/nav-common-go-lib/global"
 )
 
 var Gorm = new(_gorm)

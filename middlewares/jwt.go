@@ -9,9 +9,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
-	"navfirst.com/nav-common-go-lib/global"
-	"navfirst.com/nav-common-go-lib/response"
-	"navfirst.com/nav-common-go-lib/utils"
+	"github.com/wfu-work/nav-common-go-lib/global"
+	"github.com/wfu-work/nav-common-go-lib/response"
+	"github.com/wfu-work/nav-common-go-lib/utils"
 )
 
 var jwtWhiteList = []string{

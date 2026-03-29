@@ -1,7 +1,7 @@
 package services
 
 import (
-	"navfirst.com/nav-common-go-lib/domains"
+	"github.com/wfu-work/nav-common-go-lib/domains"
 )
 
 type CompanyService struct {

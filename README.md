@@ -46,7 +46,7 @@
 在你的业务项目中引入：
 
 ```bash
-go get navfirst.com/nav-common-go-lib
+go get github.com/wfu-work/nav-common-go-lib
 ```
 
 ## 快速开始
@@ -58,7 +58,7 @@ package main
 
 import (
 	"github.com/gin-gonic/gin"
-	"navfirst.com/nav-common-go-lib/inits"
+	"github.com/wfu-work/nav-common-go-lib/inits"
 )
 
 func main() {

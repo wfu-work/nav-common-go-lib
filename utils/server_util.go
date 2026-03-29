@@ -7,7 +7,7 @@ import (
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/mem"
-	"navfirst.com/nav-common-go-lib/global"
+	"github.com/wfu-work/nav-common-go-lib/global"
 )
 
 const (

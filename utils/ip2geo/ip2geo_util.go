@@ -15,7 +15,7 @@ import (
 
 	"github.com/lionsoul2014/ip2region/binding/golang/service"
 
-	"navfirst.com/nav-common-go-lib/global"
+	"github.com/wfu-work/nav-common-go-lib/global"
 )
 
 //go:embed ip2region_v4.xdb

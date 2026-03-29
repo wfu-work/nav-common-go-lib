@@ -3,10 +3,10 @@ package services
 import (
 	"errors"
 
+	"github.com/wfu-work/nav-common-go-lib/global"
+	"github.com/wfu-work/nav-common-go-lib/utils"
+	"github.com/wfu-work/nav-common-go-lib/vos"
 	"go.uber.org/zap"
-	"navfirst.com/nav-common-go-lib/global"
-	"navfirst.com/nav-common-go-lib/utils"
-	"navfirst.com/nav-common-go-lib/vos"
 )
 
 type LoginService struct{}

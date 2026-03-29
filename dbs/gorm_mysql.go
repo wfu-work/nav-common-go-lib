@@ -1,10 +1,10 @@
 package dbs
 
 import (
+	"github.com/wfu-work/nav-common-go-lib/configs"
+	"github.com/wfu-work/nav-common-go-lib/global"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
-	"navfirst.com/nav-common-go-lib/configs"
-	"navfirst.com/nav-common-go-lib/global"
 )
 
 // GormMysql 初始化Mysql数据库

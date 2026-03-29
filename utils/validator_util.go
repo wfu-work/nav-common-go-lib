@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"navfirst.com/nav-common-go-lib/domains"
+	"github.com/wfu-work/nav-common-go-lib/domains"
 )
 
 type Rules map[string][]string

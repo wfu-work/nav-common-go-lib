@@ -3,9 +3,9 @@ package services
 import (
 	"errors"
 
+	"github.com/wfu-work/nav-common-go-lib/domains"
+	"github.com/wfu-work/nav-common-go-lib/global"
 	"gorm.io/gorm"
-	"navfirst.com/nav-common-go-lib/domains"
-	"navfirst.com/nav-common-go-lib/global"
 )
 
 type RoleService struct {

@@ -1,6 +1,6 @@
 package routers
 
-import "navfirst.com/nav-common-go-lib/apis"
+import "github.com/wfu-work/nav-common-go-lib/apis"
 
 var SysRouterGroupApp = new(SysRouterGroup)
 

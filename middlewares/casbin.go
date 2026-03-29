@@ -6,9 +6,9 @@ import (
 	"strings"
 	"sync"
 
-	"navfirst.com/nav-common-go-lib/domains"
-	"navfirst.com/nav-common-go-lib/global"
-	"navfirst.com/nav-common-go-lib/utils"
+	"github.com/wfu-work/nav-common-go-lib/domains"
+	"github.com/wfu-work/nav-common-go-lib/global"
+	"github.com/wfu-work/nav-common-go-lib/utils"
 
 	"github.com/casbin/casbin/v2"
 	"github.com/casbin/casbin/v2/model"

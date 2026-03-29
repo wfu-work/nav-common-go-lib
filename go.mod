@@ -1,4 +1,4 @@
-module navfirst.com/nav-common-go-lib
+module github.com/wfu-work/nav-common-go-lib
 
 go 1.26.0
 

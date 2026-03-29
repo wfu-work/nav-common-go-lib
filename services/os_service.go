@@ -1,9 +1,9 @@
 package services
 
 import (
+	"github.com/wfu-work/nav-common-go-lib/global"
+	"github.com/wfu-work/nav-common-go-lib/utils"
 	"go.uber.org/zap"
-	"navfirst.com/nav-common-go-lib/global"
-	"navfirst.com/nav-common-go-lib/utils"
 )
 
 type OsService struct {

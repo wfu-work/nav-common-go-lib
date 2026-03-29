@@ -7,14 +7,14 @@ import (
 	"os"
 
 	"github.com/robfig/cron/v3"
+	"github.com/wfu-work/nav-common-go-lib/apis"
+	"github.com/wfu-work/nav-common-go-lib/dbs"
+	"github.com/wfu-work/nav-common-go-lib/global"
+	"github.com/wfu-work/nav-common-go-lib/middlewares"
+	"github.com/wfu-work/nav-common-go-lib/scheduleds"
+	"github.com/wfu-work/nav-common-go-lib/utils"
+	"github.com/wfu-work/nav-common-go-lib/utils/ip2geo"
 	"go.uber.org/zap"
-	"navfirst.com/nav-common-go-lib/apis"
-	"navfirst.com/nav-common-go-lib/dbs"
-	"navfirst.com/nav-common-go-lib/global"
-	"navfirst.com/nav-common-go-lib/middlewares"
-	"navfirst.com/nav-common-go-lib/scheduleds"
-	"navfirst.com/nav-common-go-lib/utils"
-	"navfirst.com/nav-common-go-lib/utils/ip2geo"
 )
 
 func (s *SysInit) InitializeSystem() error {

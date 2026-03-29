@@ -1,6 +1,6 @@
 package apis
 
-import "navfirst.com/nav-common-go-lib/services"
+import "github.com/wfu-work/nav-common-go-lib/services"
 
 var SysApiGroupApp = new(SysApiGroup)
 

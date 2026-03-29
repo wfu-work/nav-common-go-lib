@@ -2,9 +2,9 @@ package apis
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/wfu-work/nav-common-go-lib/global"
+	"github.com/wfu-work/nav-common-go-lib/response"
 	"go.uber.org/zap"
-	"navfirst.com/nav-common-go-lib/global"
-	"navfirst.com/nav-common-go-lib/response"
 )
 
 type FileApi struct{}
