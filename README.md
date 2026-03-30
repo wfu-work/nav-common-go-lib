@@ -1,16 +1,48 @@
 # nav-common-go-lib
 
-`nav-common-go-lib` 是一个面向 `nav-app` 体系的 Go 后端公共库，基于 `Gin`、`Gorm`、`Viper`、`Zap`、`JWT`、`Casbin` 等组件封装了一套可复用的初始化流程、通用接口、基础中间件和公共服务。
+`nav-common-go-lib` 是一个面向 `nav-app` 场景的 Go 后端基础库，基于 `Gin`、`Gorm`、`Viper`、`Zap`、`JWT`、`Casbin` 等组件封装了一套可复用的启动流程、公共中间件、基础服务与默认系统模块。
 
-这个库更适合作为业务服务的基础模块使用，而不是独立应用。业务项目引入后，可以快速获得以下能力：
+它更适合作为业务服务的底座库使用，而不是一个独立的完整应用。业务项目接入后，可以快速拥有统一的配置管理、鉴权、路由组织、数据库初始化、日志、缓存和定时任务能力。
 
-- 服务初始化与优雅关闭
-- 配置加载与热更新
-- 多数据库接入能力：`MySQL`、`PostgreSQL`、`SQLite`
-- Redis、日志、缓存等基础设施初始化
-- JWT 鉴权、Casbin 权限控制、CORS 等中间件
-- 用户、角色、企业、登录、文件、系统配置等通用 API / Service / Router
-- 定时任务与数据库清理扩展点
+## 特性
+
+- 基于 `Gin` 的统一 Web 初始化与路由挂载
+- 基于 `Gorm` 的数据库接入与表自动迁移
+- 支持 `SQLite`、`MySQL`、`PostgreSQL`
+- 支持 `Redis`、本地缓存、日志持久化
+- 内置 `JWT` 鉴权、`Casbin` 权限控制、`CORS`
+- 内置用户、角色、企业、登录、文件、系统配置等基础模块
+- 支持配置热更新、优雅关闭、定时任务扩展
+- 提供 `SysInit` 钩子，便于业务层无侵入扩展
+
+## 安装
+
+```bash
+go get github.com/wfu-work/nav-common-go-lib
+```
+
+当前模块路径：
+
+```go
+module github.com/wfu-work/nav-common-go-lib
+```
+
+## 环境要求
+
+- Go `1.26+`
+- 推荐在独立业务项目中作为基础库引用
+- 如果启用对应能力，需要准备：
+  - `SQLite` / `MySQL` / `PostgreSQL`
+  - `Redis`
+
+## 适用场景
+
+- 内部管理后台
+- 标准 Go Web 后端
+- 账号、角色、权限、登录等通用基础模块
+- 多个业务项目共享统一后端底座的场景
+
+如果你的项目只需要零散工具函数，或者完全不需要 HTTP、数据库、鉴权、配置初始化能力，这个库可能会偏重。
 
 ## 项目结构
 
@@ -31,27 +63,9 @@
 └── vos/           请求 / 响应 VO
 ```
 
-## 环境要求
-
-- Go `1.24+`
-- 推荐准备一个业务项目作为启动入口
-- 如需数据库能力，请准备以下之一：
-  - `SQLite`
-  - `MySQL`
-  - `PostgreSQL`
-- 如启用 Redis，请准备 Redis 实例
-
-## 安装
-
-在你的业务项目中引入：
-
-```bash
-go get github.com/wfu-work/nav-common-go-lib
-```
-
 ## 快速开始
 
-下面是一个最小可运行示例：
+下面是一个最小接入示例：
 
 ```go
 package main
@@ -95,21 +109,20 @@ func main() {
 }
 ```
 
-启动后默认会完成：
+默认启动过程中会完成：
 
-- 加载配置文件
+- 加载配置文件并监听热更新
 - 初始化日志
-- 初始化缓存和 IP 地理库
-- 初始化 Redis
-- 初始化 Gorm 和基础表
-- 注册系统默认路由
+- 初始化 Redis、本地缓存、IP 地理库
+- 初始化数据库连接与默认表
+- 注册系统路由
 - 启动 HTTP 服务并监听退出信号
 
-## 配置文件
+## 配置说明
 
-库内部内置了一份基础配置 `config-common.yaml`，运行时还会继续读取外部业务配置文件。
+库内部带有一份基础配置 `config-common.yaml`，业务项目还需要提供自己的配置文件。
 
-配置文件查找优先级如下：
+配置文件查找优先级：
 
 1. 启动参数 `-c /path/to/config.yaml`
 2. 环境变量 `NAV_CONFIG`
@@ -117,7 +130,7 @@ func main() {
    - `config.debug.yaml`
    - `config.release.yaml`
    - `config.test.yaml`
-4. 回退到根目录下的 `config.yaml`
+4. 根目录默认配置 `config.yaml`
 
 一个最小配置示例：
 
@@ -133,7 +146,7 @@ system:
 
 jwt:
   issuer: nav-app
-  signing-key: replace-with-your-secret
+  signing-key: replace-with-a-real-secret
   expires-time: 7d
   buffer-time: 1d
 
@@ -160,7 +173,7 @@ zap:
 
 ## 默认路由
 
-库中已经内置一批系统级路由，主要包括：
+默认内置一批系统级接口，主要包括：
 
 - `/health` 健康检查
 - `/swagger/index.html` Swagger 文档入口
@@ -168,27 +181,27 @@ zap:
 - 文件上传与访问
 - 系统配置
 - 服务器信息
-- 注册与加密相关接口
+- 注册与加解密接口
 
-这些路由会统一挂载到 `system.router-prefix` 下，例如默认前缀为 `/api` 时：
+这些路由会统一挂载到 `system.router-prefix` 下，例如当前前缀配置为 `/api` 时：
 
 - `GET /api/health`
 - `GET /api/swagger/index.html`
 
 ## 扩展点
 
-`inits.SysInit` 提供了一组钩子，便于业务项目在不修改公共库源码的情况下扩展：
+`inits.SysInit` 提供了一组钩子，方便业务项目扩展：
 
-- `OnWebInit`：注册全局 Web 初始化逻辑
+- `OnWebInit`：注册 Web 级初始化逻辑
 - `OnRouterInit`：追加业务路由
 - `OnTableInit`：初始化业务表
 - `OnScheInit`：追加定时任务
 - `OnCacheInit`：预留缓存初始化扩展
-- `OnOtherInit`：其他业务初始化逻辑
+- `OnOtherInit`：追加其他初始化逻辑
 - `OnClearInit`：注册数据库清理规则
 - `OnShutInit`：服务关闭前收尾
 
-## 核心全局对象
+## 核心对象
 
 初始化完成后，可通过 `global` 包访问公共资源：
 
@@ -198,24 +211,33 @@ zap:
 - `global.NAV_LOG`：Zap 日志对象
 - `global.LOCAL_CACHE`：本地缓存
 
-## 适用场景
-
-这个库适合以下类型的项目：
-
-- 内部管理后台
-- 通用账号 / 权限系统
-- 基于 Gin 的标准后端服务
-- 多个业务项目共享统一基础设施的场景
-
-如果你的项目只需要纯工具函数，或者完全不需要 HTTP / 鉴权 / 数据库初始化，这个库可能会偏重。
-
 ## 开发建议
 
-- 业务项目中建议只把这里作为“基础设施层”
-- 业务实体、业务路由、业务服务建议放在各自项目中扩展
-- 生产环境务必替换默认 JWT 密钥和数据库账号密码
-- 建议明确区分 `debug`、`test`、`release` 三套配置文件
+- 建议把这个库作为“基础设施层”使用，不要把所有业务逻辑都塞进公共库
+- 业务实体、业务路由、业务服务建议在业务仓库中实现
+- 生产环境必须显式配置 `jwt.signing-key`
+- 建议区分 `debug`、`test`、`release` 三套配置文件
+- 如果你需要给外部项目使用，优先保持模块路径与 GitHub 仓库一致
+
+## 发布与推送
+
+仓库内置了一个本地一键推送脚本：
+
+```bash
+./scripts/push-github.sh
+```
+
+也支持自定义提交信息：
+
+```bash
+./scripts/push-github.sh "feat: add xxx"
+```
+
+仓库同时带有 GitHub Actions 校验工作流，会在 push 和 pull request 时自动执行：
+
+- `go vet ./...`
+- `go test ./...`
 
 ## 许可证
 
-当前仓库内未看到明确的开源许可证文件。若需要对外分发或开源，建议补充 `LICENSE` 文件并明确使用范围。
+本项目使用 [MIT License](./LICENSE)。
