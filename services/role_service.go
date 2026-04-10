@@ -4,7 +4,6 @@ import (
 	"errors"
 
 	"github.com/wfu-work/nav-common-go-lib/domains"
-	"github.com/wfu-work/nav-common-go-lib/global"
 	"gorm.io/gorm"
 )
 
@@ -13,6 +12,12 @@ type RoleService struct {
 }
 
 var RoleServiceApp = new(RoleService)
+
+func (s *RoleService) WithDB(db *gorm.DB) *RoleService {
+	cloned := *s
+	cloned.CrudService = *s.CrudService.WithDB(db)
+	return &cloned
+}
 
 func (s RoleService) CreateRole(d domains.SysRole) error {
 	if d.Guid == "" {
@@ -30,7 +35,7 @@ func (s RoleService) CreateRole(d domains.SysRole) error {
 
 func (s RoleService) GetRoleByName(name string) (*domains.SysRole, error) {
 	var result domains.SysRole
-	err := global.NAV_DB.Where("name = ?", name).First(&result).Error
+	err := s.DB().Where("name = ?", name).First(&result).Error
 	if err != nil && errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
@@ -39,7 +44,7 @@ func (s RoleService) GetRoleByName(name string) (*domains.SysRole, error) {
 
 func (s RoleService) GetRoleByCode(code string) (*domains.SysRole, error) {
 	var result domains.SysRole
-	err := global.NAV_DB.Where("code = ?", code).First(&result).Error
+	err := s.DB().Where("code = ?", code).First(&result).Error
 	if err != nil && errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}

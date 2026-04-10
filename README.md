@@ -201,6 +201,57 @@ zap:
 - `OnClearInit`：注册数据库清理规则
 - `OnShutInit`：服务关闭前收尾
 
+## 事务用法
+
+基础 `CrudService` 已支持注入自定义 `*gorm.DB`，常用业务服务也提供了 `WithDB()`，适合在事务中复用：
+
+```go
+import (
+	"context"
+
+	"github.com/wfu-work/nav-common-go-lib/domains"
+	"github.com/wfu-work/nav-common-go-lib/global"
+	"github.com/wfu-work/nav-common-go-lib/services"
+	"gorm.io/gorm"
+)
+
+func doBiz(ctx context.Context) error {
+	return services.WithTx(ctx, func(tx *gorm.DB) error {
+		userSvc := services.UserServiceApp.WithDB(tx)
+		roleSvc := services.RoleServiceApp.WithDB(tx)
+		companySvc := services.CompanyServiceApp.WithDB(tx)
+
+		user, err := userSvc.GetByUserName("admin")
+		if err != nil {
+			return err
+		}
+		if user != nil {
+			_, _, err = roleSvc.List(domains.PageInfo{Page: 1, Size: 10}, "name")
+			return err
+		}
+		return companySvc.DeleteByGuid("some-guid")
+	})
+}
+```
+
+如果你已经手上有事务对象，也可以直接注入：
+
+```go
+tx := global.NAV_DB.Begin()
+userSvc := services.UserServiceApp.WithDB(tx)
+companySvc := services.CompanyServiceApp.WithDB(tx)
+```
+
+当前已支持 `WithDB()` 的典型服务包括：
+
+- `UserService`
+- `RoleService`
+- `CompanyService`
+- `LoggerService`
+- `LoginLogService`
+- `UserRoleService`
+- `RegisterService`
+
 ## 核心对象
 
 初始化完成后，可通过 `global` 包访问公共资源：
@@ -218,25 +269,6 @@ zap:
 - 生产环境必须显式配置 `jwt.signing-key`
 - 建议区分 `debug`、`test`、`release` 三套配置文件
 - 如果你需要给外部项目使用，优先保持模块路径与 GitHub 仓库一致
-
-## 发布与推送
-
-仓库内置了一个本地一键推送脚本：
-
-```bash
-./scripts/push-github.sh
-```
-
-也支持自定义提交信息：
-
-```bash
-./scripts/push-github.sh "feat: add xxx"
-```
-
-仓库同时带有 GitHub Actions 校验工作流，会在 push 和 pull request 时自动执行：
-
-- `go vet ./...`
-- `go test ./...`
 
 ## 许可证
 

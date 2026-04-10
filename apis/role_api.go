@@ -132,13 +132,13 @@ func (i RoleApi) List(c *gin.Context) {
 // @Router /role/list/all [get]
 func (i RoleApi) ListAll(c *gin.Context) {
 	query := c.Request.URL.Query()
-	params := make(map[string]string)
+	params := make(map[string]any)
 	for key, val := range query {
 		if len(val) > 0 {
 			params[key] = val[0]
 		}
 	}
-	result, err := roleService.ListAll(params)
+	result, err := roleService.ListByFields(params)
 	if err != nil {
 		global.NAV_LOG.Error("获取失败", zap.Error(err))
 		response.Fail(nil, c)

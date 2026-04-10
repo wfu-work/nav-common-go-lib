@@ -4,7 +4,6 @@ import (
 	"errors"
 
 	"github.com/wfu-work/nav-common-go-lib/domains"
-	"github.com/wfu-work/nav-common-go-lib/global"
 	"github.com/wfu-work/nav-common-go-lib/utils"
 	"github.com/wfu-work/nav-common-go-lib/vos"
 	"gorm.io/gorm"
@@ -16,9 +15,15 @@ type UserService struct {
 
 var UserServiceApp = new(UserService)
 
+func (s *UserService) WithDB(db *gorm.DB) *UserService {
+	cloned := *s
+	cloned.CrudService = *s.CrudService.WithDB(db)
+	return &cloned
+}
+
 func (s *UserService) GetByUserName(username string) (*domains.SysUser, error) {
 	var result = &domains.SysUser{}
-	err := global.NAV_DB.Where("username = ?", username).First(result).Error
+	err := s.DB().Where("username = ?", username).First(result).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil

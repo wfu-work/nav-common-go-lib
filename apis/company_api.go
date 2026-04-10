@@ -132,13 +132,13 @@ func (i CompanyApi) List(c *gin.Context) {
 // @Router /company/list/all [get]
 func (i CompanyApi) ListAll(c *gin.Context) {
 	query := c.Request.URL.Query()
-	params := make(map[string]string)
+	params := make(map[string]any)
 	for key, val := range query {
 		if len(val) > 0 {
 			params[key] = val[0]
 		}
 	}
-	result, err := companyService.ListAll(params)
+	result, err := companyService.ListByFields(params)
 	if err != nil {
 		global.NAV_LOG.Error("获取失败", zap.Error(err))
 		response.Fail(nil, c)
