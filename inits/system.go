@@ -85,7 +85,11 @@ func (s *SysInit) Shed() {
 		var option []cron.Option
 		option = append(option, cron.WithSeconds())
 		_, _ = timers.AddTaskByFunc("ClearDB", "@daily", func() {
-			err := scheduleds.ClearTable(s.onClearInit())
+			var clearDBs []scheduleds.ClearDB
+			if s.onClearInit != nil {
+				clearDBs = s.onClearInit()
+			}
+			err := scheduleds.ClearTable(clearDBs)
 			if err != nil {
 				fmt.Println("timer error:", err)
 			}

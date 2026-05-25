@@ -31,7 +31,7 @@ func ClearTable(dbs []ClearDB) error {
 		CompareField: "create_time",
 		Interval:     "720h",
 	})
-	if dbs != nil && len(dbs) == 0 {
+	if len(dbs) > 0 {
 		ClearTableDetail = append(ClearTableDetail, dbs...)
 	}
 
