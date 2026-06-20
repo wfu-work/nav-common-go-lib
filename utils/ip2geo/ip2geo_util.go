@@ -125,7 +125,7 @@ func queryIpLocation(ip string) (string, string, string, error) {
 	go func() {
 		var region string
 		var err error
-		region, err = ipSearcher.SearchByStr(ip)
+		region, err = ipSearcher.Search(ip)
 		resultCh <- struct {
 			region string
 			err    error
