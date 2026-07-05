@@ -138,6 +138,7 @@ func (s *SysInit) Routers() *gin.Engine {
 		systemRouter.InitCompanyRouter(PrivateGroup)            // 注册企业相关路由
 		systemRouter.InitUserRouter(PrivateGroup)               // 注册用户相关路由
 		systemRouter.InitRoleRouter(PrivateGroup)               // 注册系统角色路由
+		systemRouter.InitPermissionRouter(PrivateGroup)         // 注册系统权限路由
 		systemRouter.InitLogRouter(PrivateGroup)                // 注册日志相关路由
 		systemRouter.InitOsRouter(PrivateGroup)                 // 注册服务器相关路由
 		systemRouter.InitConfigRouter(PrivateGroup)             // 注册配置路由

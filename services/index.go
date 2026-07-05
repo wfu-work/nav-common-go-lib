@@ -28,6 +28,7 @@ type SysServiceGroup struct {
 	LoginService
 	LoginLogService
 	UserRoleService
+	PermissionService
 	CompanyService
 	RegisterService
 }

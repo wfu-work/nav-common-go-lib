@@ -47,6 +47,8 @@ func RegisterTables() error {
 		domains.SysUser{},
 		domains.LoginLog{},
 		domains.SysUserRole{},
+		domains.SysPermission{},
+		domains.SysRolePermission{},
 		domains.SysCompany{},
 	)
 	if err != nil {

@@ -15,19 +15,21 @@ type SysRouterGroup struct {
 	UserRouter
 	CompanyRouter
 	RoleRouter
+	PermissionRouter
 	RegisterRouter
 }
 
 var (
-	logApi      = apis.SysApiGroupApp.LogApi
-	osApi       = apis.SysApiGroupApp.OsApi
-	configApi   = apis.SysApiGroupApp.ConfigApi
-	loginApi    = apis.SysApiGroupApp.LoginApi
-	loginLogApi = apis.SysApiGroupApp.LoginLogApi
-	fileApi     = apis.SysApiGroupApp.FileApi
-	secretApi   = apis.SysApiGroupApp.SecretApi
-	userApi     = apis.SysApiGroupApp.UserApi
-	companyApi  = apis.SysApiGroupApp.CompanyApi
-	roleApi     = apis.SysApiGroupApp.RoleApi
-	registerApi = apis.SysApiGroupApp.RegisterApi
+	logApi        = apis.SysApiGroupApp.LogApi
+	osApi         = apis.SysApiGroupApp.OsApi
+	configApi     = apis.SysApiGroupApp.ConfigApi
+	loginApi      = apis.SysApiGroupApp.LoginApi
+	loginLogApi   = apis.SysApiGroupApp.LoginLogApi
+	fileApi       = apis.SysApiGroupApp.FileApi
+	secretApi     = apis.SysApiGroupApp.SecretApi
+	userApi       = apis.SysApiGroupApp.UserApi
+	companyApi    = apis.SysApiGroupApp.CompanyApi
+	roleApi       = apis.SysApiGroupApp.RoleApi
+	permissionApi = apis.SysApiGroupApp.PermissionApi
+	registerApi   = apis.SysApiGroupApp.RegisterApi
 )
