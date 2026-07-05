@@ -115,9 +115,9 @@ func LoginLogger() gin.HandlerFunc {
 			}
 			username = loginVo.Username
 			if username != "" {
-				user, err := services.UserServiceApp.GetByUserName(username)
+				user, err := services.UserServiceApp.GetByLoginAccount(username)
 				if user == nil {
-					global.NAV_LOG.Error("get user by username error:", zap.Error(err))
+					global.NAV_LOG.Error("get user by login account error:", zap.Error(err))
 					c.Next()
 					return
 				}

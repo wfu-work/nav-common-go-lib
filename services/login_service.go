@@ -14,7 +14,7 @@ type LoginService struct{}
 var LoginServiceApp = new(LoginService)
 
 func (s *LoginService) LoginIn(v *vos.LoginVo) (*vos.TokenVo, error) {
-	user, err := UserServiceApp.GetByUserName(v.Username)
+	user, err := UserServiceApp.GetByLoginAccount(v.Username)
 	if err != nil {
 		return nil, errors.New("数据库错误")
 	}

@@ -2,6 +2,7 @@ package services
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/wfu-work/nav-common-go-lib/domains"
 	"github.com/wfu-work/nav-common-go-lib/utils"
@@ -24,6 +25,31 @@ func (s *UserService) WithDB(db *gorm.DB) *UserService {
 func (s *UserService) GetByUserName(username string) (*domains.SysUser, error) {
 	var result = &domains.SysUser{}
 	err := s.DB().Where("username = ?", username).First(result).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+	}
+	return result, err
+}
+
+func (s *UserService) GetByLoginAccount(account string) (*domains.SysUser, error) {
+	account = strings.TrimSpace(account)
+	if account == "" {
+		return nil, nil
+	}
+	normalized := strings.ToLower(account)
+
+	user, err := s.getFirstUserByCondition("LOWER(username) = ?", normalized)
+	if err != nil || user != nil {
+		return user, err
+	}
+	return s.getFirstUserByCondition("LOWER(email) = ?", normalized)
+}
+
+func (s *UserService) getFirstUserByCondition(query any, args ...any) (*domains.SysUser, error) {
+	var result = &domains.SysUser{}
+	err := s.DB().Where(query, args...).First(result).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
