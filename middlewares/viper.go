@@ -11,6 +11,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
+	"github.com/wfu-work/nav-common-go-lib/configs"
 	"github.com/wfu-work/nav-common-go-lib/global"
 )
 
@@ -49,24 +50,38 @@ func Viper() (*viper.Viper, error) {
 		return nil, fmt.Errorf("读取业务配置失败: %w", err)
 	}
 
+	defaults := make(map[string]any, len(base.AllKeys()))
 	for _, key := range base.AllKeys() {
-		if !v.IsSet(key) {
-			v.Set(key, base.Get(key))
-		}
+		defaults[key] = base.Get(key)
 	}
+	configs.SetDefaults(defaults)
+	configs.ApplyDefaults(v)
 
-	v.WatchConfig()
-	v.OnConfigChange(func(e fsnotify.Event) {
-		fmt.Printf("config file changed: %v\n", e)
-		if err = v.Unmarshal(&global.NAV_CONFIG); err != nil {
-			fmt.Println(err)
-			return
-		}
-	})
-	if err = v.Unmarshal(&global.NAV_CONFIG); err != nil {
+	if err = reloadServerConfig(v); err != nil {
 		return nil, fmt.Errorf("解析配置失败: %w", err)
 	}
+
+	v.OnConfigChange(func(e fsnotify.Event) {
+		fmt.Printf("config file changed: %v\n", e)
+		if reloadErr := reloadServerConfig(v); reloadErr != nil {
+			fmt.Printf("reload config failed: %v\n", reloadErr)
+		}
+	})
+	v.WatchConfig()
 	return v, nil
+}
+
+func reloadServerConfig(v *viper.Viper) error {
+	global.Lock.Lock()
+	defer global.Lock.Unlock()
+
+	var next configs.Server
+	if err := v.Unmarshal(&next); err != nil {
+		return err
+	}
+	next.Extras = global.NAV_CONFIG.Extras
+	global.NAV_CONFIG = next
+	return nil
 }
 
 // GetConfigPath 获取配置文件路径, 优先级: 命令行 > 环境变量 > 默认值

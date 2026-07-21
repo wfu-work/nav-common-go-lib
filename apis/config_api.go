@@ -32,10 +32,7 @@ func (i ConfigApi) SaveConfig(c *gin.Context) {
 		response.Fail(false, c)
 		return
 	}
-	global.Lock.Lock()
-	global.NAV_VIPER.Set(key, req.Value)
-	err := configService.SaveConfigToFile()
-	global.Lock.Unlock()
+	err := configService.SaveConfigValue(key, req.Value)
 	if err != nil {
 		global.NAV_LOG.Error("保存失败", zap.Error(err))
 		response.Fail(false, c)
@@ -57,9 +54,12 @@ func (i ConfigApi) SaveConfig(c *gin.Context) {
 func (i ConfigApi) GetConfig(c *gin.Context) {
 	key := c.Param("key")
 	key = strings.ReplaceAll(key, "/", ".")
-	global.Lock.Lock()
-	val := global.NAV_VIPER.Get(key)
-	global.Lock.Unlock()
+	val, err := configService.GetConfigValue(key)
+	if err != nil {
+		global.NAV_LOG.Error("获取失败", zap.Error(err))
+		response.Fail(nil, c)
+		return
+	}
 	if val == nil {
 		global.NAV_LOG.Error("获取失败")
 		response.Fail(nil, c)

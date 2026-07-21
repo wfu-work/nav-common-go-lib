@@ -21,6 +21,9 @@ func NewSqliteInitHandler() *SqliteInitHandler {
 
 // WriteConfig mysql回写配置
 func (h SqliteInitHandler) WriteConfig(ctx context.Context) error {
+	global.Lock.Lock()
+	defer global.Lock.Unlock()
+
 	c, ok := ctx.Value("config").(configs.Sqlite)
 	if !ok {
 		return errors.New("sqlite config invalid")
@@ -29,11 +32,8 @@ func (h SqliteInitHandler) WriteConfig(ctx context.Context) error {
 	global.NAV_CONFIG.Sqlite = c
 	global.NAV_CONFIG.JWT.SigningKey = uuid.New().String()
 	cs := utils.StructToMap(global.NAV_CONFIG)
-	for k, v := range cs {
-		global.NAV_VIPER.Set(k, v)
-	}
 	global.NAV_ACTIVE_DBNAME = &c.Dbname
-	return global.NAV_VIPER.WriteConfig()
+	return configs.WriteConfigValues(global.NAV_VIPER, cs)
 }
 
 // EnsureDB 创建数据库并初始化 sqlite
