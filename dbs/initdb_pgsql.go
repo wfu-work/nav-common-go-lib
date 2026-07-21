@@ -65,7 +65,7 @@ func (h PgsqlInitHandler) EnsureDB(ctx context.Context, conf *InitDB) (next cont
 	if db, err = gorm.Open(postgres.New(postgres.Config{
 		DSN:                  c.Dsn(), // DSN data source name
 		PreferSimpleProtocol: false,
-	}), &gorm.Config{DisableForeignKeyConstraintWhenMigrating: true}); err != nil {
+	}), Gorm.Config(c.GeneralDB)); err != nil {
 		return ctx, err
 	}
 	//global.NAV_CONFIG.AutoCode.Root, _ = filepath.Abs("..")

@@ -51,9 +51,7 @@ func (h SqliteInitHandler) EnsureDB(ctx context.Context, conf *InitDB) (next con
 	dsn := conf.SqliteEmptyDsn()
 
 	var db *gorm.DB
-	if db, err = gorm.Open(sqlite.Open(dsn), &gorm.Config{
-		DisableForeignKeyConstraintWhenMigrating: true,
-	}); err != nil {
+	if db, err = gorm.Open(sqlite.Open(dsn), Gorm.Config(c.GeneralDB)); err != nil {
 		return ctx, err
 	}
 	//global.NAV_CONFIG.AutoCode.Root, _ = filepath.Abs("..")

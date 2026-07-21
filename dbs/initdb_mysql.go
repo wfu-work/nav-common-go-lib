@@ -61,7 +61,7 @@ func (h MysqlInitHandler) EnsureDB(ctx context.Context, conf *InitDB) (next cont
 		DSN:                       c.Dsn(), // DSN data source name
 		DefaultStringSize:         191,     // string 类型字段的默认长度
 		SkipInitializeWithVersion: true,    // 根据版本自动配置
-	}), &gorm.Config{DisableForeignKeyConstraintWhenMigrating: true}); err != nil {
+	}), Gorm.Config(c.GeneralDB)); err != nil {
 		return ctx, err
 	}
 	//global.NAV_CONFIG.AutoCode.Root, _ = filepath.Abs("..")
