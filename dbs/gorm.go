@@ -62,9 +62,10 @@ func RegisterTables() error {
 func (g *_gorm) Config(general configs.GeneralDB) *gorm.Config {
 	return &gorm.Config{
 		Logger: logger.New(NewWriter(general), logger.Config{
-			SlowThreshold: 200 * time.Millisecond,
-			LogLevel:      general.LogLevel(),
-			Colorful:      true,
+			SlowThreshold:             200 * time.Millisecond,
+			LogLevel:                  general.LogLevel(),
+			Colorful:                  true,
+			IgnoreRecordNotFoundError: true,
 		}),
 		NamingStrategy: schema.NamingStrategy{
 			TablePrefix:   general.Prefix,
@@ -78,9 +79,10 @@ func (g *_gorm) ConfigSqlite(prefix string, singular bool) *gorm.Config {
 	var general = global.NAV_CONFIG.Sqlite.GeneralDB
 	return &gorm.Config{
 		Logger: logger.New(NewWriter(general), logger.Config{
-			SlowThreshold: 200 * time.Millisecond,
-			LogLevel:      general.LogLevel(),
-			Colorful:      true,
+			SlowThreshold:             200 * time.Millisecond,
+			LogLevel:                  general.LogLevel(),
+			Colorful:                  true,
+			IgnoreRecordNotFoundError: true,
 		}),
 		NamingStrategy: schema.NamingStrategy{
 			TablePrefix:   prefix,
