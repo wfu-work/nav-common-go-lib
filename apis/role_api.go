@@ -1,148 +1,133 @@
 package apis
 
 import (
+	"errors"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/wfu-work/nav-common-go-lib/domains"
 	"github.com/wfu-work/nav-common-go-lib/global"
 	"github.com/wfu-work/nav-common-go-lib/response"
-	"github.com/wfu-work/nav-common-go-lib/utils"
-	"go.uber.org/zap"
+	"github.com/wfu-work/nav-common-go-lib/services"
+	"gorm.io/gorm"
+	"strings"
 )
 
 type RoleApi struct{}
 
-// Save 创建系统角色
-// @Summary 创建系统角色
-// @Description 创建系统角色
-// @Tags 系统模块
-// @Security ApiKeyAuth
-// @Accept json
-// @Produce json
-// @Param data body domains.SysRole true "系统角色对象"
-// @Success 200 {object} response.Response{data=bool,msg=string}
-// @Router /role [post]
-func (i RoleApi) Save(c *gin.Context) {
-	var entity domains.SysRole
-	err := c.ShouldBindJSON(&entity)
-	if err != nil {
-		response.FailWithMessage(err.Error(), c)
+func (RoleApi) Save(c *gin.Context) {
+	var req struct {
+		Guid        string `json:"guid"`
+		CompanyGuid string `json:"companyGuid"`
+		Name        string `json:"name"`
+		Code        string `json:"code"`
+		Remark      string `json:"remark"`
+		Enabled     *bool  `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		accessReply(c, nil, err)
 		return
 	}
-	err = utils.Verify(entity, utils.RoleVerify)
+	company, err := services.TargetCompany(services.RequestAccess(c), req.CompanyGuid)
 	if err != nil {
-		response.FailWithMessage(err.Error(), c)
+		accessReply(c, nil, err)
 		return
 	}
-	err = roleService.Create(entity)
-	if err != nil {
-		global.NAV_LOG.Error("创建失败!", zap.Error(err))
-		response.Fail(false, c)
-		return
-	}
-	response.Ok(true, c)
-}
-
-// DeleteByGuid 根据guid删除系统角色
-// @Summary 根据系统角色guid删除系统角色
-// @Description 根据系统角色guid删除系统角色
-// @Tags 系统模块
-// @Security ApiKeyAuth
-// @Accept json
-// @Produce json
-// @Param guid path string true "系统角色guid"
-// @Success 200 {object} response.Response{data=bool,msg=string}
-// @Router /role/{guid} [delete]
-func (i RoleApi) DeleteByGuid(c *gin.Context) {
-	guid := c.Param("guid")
-	err := roleService.DeleteByGuid(guid)
-	if err != nil {
-		global.NAV_LOG.Error("删除失败", zap.Error(err))
-		response.Fail(false, c)
-		return
-	}
-	response.Ok(true, c)
-}
-
-// GetByGuid 获取系统角色信息
-// @Summary 根据系统角色guid获取系统角色
-// @Description 根据系统角色guid获取系统角色
-// @Tags 系统模块
-// @Security ApiKeyAuth
-// @Accept json
-// @Produce json
-// @Param guid path string true "系统角色guid"
-// @Success 200 {object} response.Response{data=domains.SysRole,msg=string}
-// @Router /role/{guid} [get]
-func (i RoleApi) GetByGuid(c *gin.Context) {
-	guid := c.Param("guid")
-	t, err := roleService.GetByGuid(guid)
-	if err != nil {
-		global.NAV_LOG.Error("获取失败", zap.Error(err))
-		response.Fail(false, c)
-		return
-	}
-	response.Ok(t, c)
-}
-
-// List 分页获取系统角色列表
-// @Summary 分页获取系统角色列表
-// @Description 分页获取系统角色列表
-// @Tags 系统模块
-// @Security ApiKeyAuth
-// @Accept json
-// @Produce json
-// @Param data  query domains.PageInfo true  "页码, 每页大小"
-// @Success 200  {object}  response.Response{data=domains.PageResult,msg=string}  "分页获取系统角色列表,返回包括列表,总数,页码,每页数量"
-// @Router /role/list [get]
-func (i RoleApi) List(c *gin.Context) {
-	var pageInfo domains.PageInfo
-	err := c.ShouldBindQuery(&pageInfo)
-	if err != nil {
-		response.FailWithMessage(err.Error(), c)
-		return
-	}
-	err = utils.Verify(pageInfo, utils.PageInfoVerify)
-	if err != nil {
-		response.FailWithMessage(err.Error(), c)
-		return
-	}
-	list, total, err := roleService.List(pageInfo, "name")
-	if err != nil {
-		global.NAV_LOG.Error("获取失败!", zap.Error(err))
-		response.Fail(nil, c)
-		return
-	}
-	response.Ok(domains.PageResult{
-		Data:  list,
-		Total: total,
-		Page:  pageInfo.Page,
-		Size:  pageInfo.Size,
-	}, c)
-}
-
-// ListAll 获取所有角色列表
-// @Summary 获取所有角色列表
-// @Description 获取所有角色列表
-// @Tags 系统模块
-// @Security ApiKeyAuth
-// @Accept json
-// @Produce json
-// @Param data  query any true  "参数"
-// @Success 200  {object}  response.Response{data=[]any,msg=string}
-// @Router /role/list/all [get]
-func (i RoleApi) ListAll(c *gin.Context) {
-	query := c.Request.URL.Query()
-	params := make(map[string]any)
-	for key, val := range query {
-		if len(val) > 0 {
-			params[key] = val[0]
+	err = global.NAV_DB.Transaction(func(tx *gorm.DB) error {
+		var role domains.SysRole
+		if req.Guid != "" {
+			if err := tx.Where("guid = ? AND company_guid = ?", req.Guid, company).First(&role).Error; err != nil {
+				return err
+			}
 		}
+		code := strings.ToUpper(strings.TrimSpace(req.Code))
+		if code == "" || req.Name == "" || code == "SUPER_ADMIN" {
+			return errors.New("角色名称或编码无效")
+		}
+		if role.Guid == "" && code == "COMPANY_ADMIN" {
+			return errors.New("企业管理员是内置角色")
+		}
+		if role.BuiltIn && code != role.Code {
+			return errors.New("内置角色编码不能修改")
+		}
+		if req.Enabled != nil && !*req.Enabled && role.Code == "COMPANY_ADMIN" {
+			return errors.New("不能停用企业管理员角色")
+		}
+		if role.Guid == "" {
+			role.Guid = uuid.NewString()
+			role.Enabled = true
+		}
+		role.CompanyGuid = company
+		role.Name = req.Name
+		role.Code = code
+		role.Remark = req.Remark
+		if req.Enabled != nil {
+			role.Enabled = *req.Enabled
+		}
+		return tx.Save(&role).Error
+	})
+	if err == nil {
+		refreshCasbinAfterPermissionChange(c)
 	}
-	result, err := roleService.ListByFields(params)
-	if err != nil {
-		global.NAV_LOG.Error("获取失败", zap.Error(err))
-		response.Fail(nil, c)
+	if !c.IsAborted() {
+		accessReply(c, true, err)
+	}
+}
+func (RoleApi) DeleteByGuid(c *gin.Context) {
+	var role domains.SysRole
+	if err := services.AccessDB(c, &role).Where("guid = ?", c.Param("guid")).First(&role).Error; err != nil {
+		accessReply(c, nil, err)
 		return
 	}
-	response.Ok(result, c)
+	if role.Code == "COMPANY_ADMIN" || role.Code == "SUPER_ADMIN" {
+		response.FailWithMessage("不能删除内置管理员角色", c)
+		return
+	}
+	err := global.NAV_DB.Transaction(func(tx *gorm.DB) error {
+		var n int64
+		if err := tx.Model(&domains.SysUserRole{}).Where("role_guid = ?", role.Guid).Count(&n).Error; err != nil {
+			return err
+		}
+		if n > 0 {
+			return errors.New("请先移除角色关联的用户")
+		}
+		if err := tx.Where("role_guid = ?", role.Guid).Delete(&domains.SysRolePermission{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&role).Error
+	})
+	if err == nil {
+		refreshCasbinAfterPermissionChange(c)
+	}
+	if !c.IsAborted() {
+		accessReply(c, true, err)
+	}
+}
+func (RoleApi) GetByGuid(c *gin.Context) {
+	var role domains.SysRole
+	err := services.AccessDB(c, &role).Where("guid = ?", c.Param("guid")).First(&role).Error
+	accessReply(c, role, err)
+}
+func (RoleApi) List(c *gin.Context) {
+	var q domains.PageInfo
+	if err := c.ShouldBindQuery(&q); err != nil {
+		accessReply(c, nil, err)
+		return
+	}
+	db := services.AccessDB(c, &domains.SysRole{}).Where("company_guid <> ''")
+	if q.Content != "" {
+		db = db.Where("(name LIKE ? OR code LIKE ?)", "%"+q.Content+"%", "%"+q.Content+"%")
+	}
+	var n int64
+	if err := db.Count(&n).Error; err != nil {
+		accessReply(c, nil, err)
+		return
+	}
+	roles := []domains.SysRole{}
+	err := db.Scopes(q.Paginate()).Order("sort ASC,id ASC").Find(&roles).Error
+	accessReply(c, domains.PageResult{Data: roles, Total: n, Page: q.Page, Size: q.Size}, err)
+}
+func (RoleApi) ListAll(c *gin.Context) {
+	roles := []domains.SysRole{}
+	err := services.AccessDB(c, &domains.SysRole{}).Where("company_guid <> ''").Order("sort ASC,id ASC").Find(&roles).Error
+	accessReply(c, roles, err)
 }

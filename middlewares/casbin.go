@@ -2,7 +2,6 @@ package middlewares
 
 import (
 	"errors"
-	"path"
 	"strings"
 	"sync"
 
@@ -125,19 +124,36 @@ func CasbinHandler() gin.HandlerFunc {
 		urlPath := c.Request.URL.Path
 		urlPath = strings.TrimPrefix(urlPath, global.NAV_CONFIG.System.RouterPrefix)
 		method := strings.ToUpper(c.Request.Method)
-		for _, white := range jwtWhiteList {
-			if ok, _ := path.Match(white, urlPath); ok {
-				c.Next()
-				return
-			}
-		}
-
-		waitUse, _ := utils.GetClaims(c)
-		roleCode := waitUse.RoleCodes
-		if containsRoleCode(roleCode, "SUPER_ADMIN") {
+		if publicEndpoint(method, urlPath) || selfEndpoint(method, urlPath) {
 			c.Next()
 			return
 		}
+		a := services.RequestAccess(c)
+		if a == nil {
+			response.NoAuth("未登录", c)
+			c.Abort()
+			return
+		}
+		if a.PlatformAdmin() {
+			c.Next()
+			return
+		}
+		// System administration cannot be delegated through a forged role code or API wildcard.
+		if strings.HasPrefix(urlPath, "/company") || strings.HasPrefix(urlPath, "/user") || strings.HasPrefix(urlPath, "/role") || strings.HasPrefix(urlPath, "/permission") {
+			if !a.CompanyAdmin() {
+				response.NoPermission("需要企业管理员权限", c)
+				c.Abort()
+				return
+			}
+			c.Next()
+			return
+		}
+		if strings.HasPrefix(urlPath, "/config") || strings.HasPrefix(urlPath, "/secret") || strings.HasPrefix(urlPath, "/register") || strings.HasPrefix(urlPath, "/file") || strings.HasPrefix(urlPath, "/oss") || strings.HasPrefix(urlPath, "/os") || strings.HasPrefix(urlPath, "/logs") || strings.HasPrefix(urlPath, "/log") || strings.HasPrefix(urlPath, "/serial") {
+			response.NoPermission("仅平台管理员可操作", c)
+			c.Abort()
+			return
+		}
+		waitUse, _ := utils.GetClaims(c)
 		e := GetCasbin()
 		if e == nil {
 			response.NoPermission("权限系统未初始化", c)

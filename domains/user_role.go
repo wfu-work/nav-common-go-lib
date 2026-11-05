@@ -2,8 +2,8 @@ package domains
 
 type SysUserRole struct {
 	BaseEntity
-	UserGuid string `json:"userGuid" gorm:"size:50;comment:用户GUID"`
-	RoleGuid string `json:"roleGuid" gorm:"size:50;comment:角色GUID"`
+	UserGuid string `json:"userGuid" gorm:"size:50;uniqueIndex:idx_user_role;comment:用户GUID"`
+	RoleGuid string `json:"roleGuid" gorm:"size:50;uniqueIndex:idx_user_role;comment:角色GUID"`
 }
 
 func (SysUserRole) TableName() string {

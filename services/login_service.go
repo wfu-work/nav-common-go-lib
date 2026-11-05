@@ -28,10 +28,13 @@ func (s *LoginService) LoginIn(v *vos.LoginVo) (*vos.TokenVo, error) {
 	if ok := utils.BcryptCheck(password, user.Password); !ok {
 		return nil, errors.New("密码错误")
 	}
-	role, err := UserRoleServiceApp.GetByUserGuid(user.Guid)
-	if err == nil && role != nil {
-		user.RoleList = append(user.RoleList, *role)
+	a, err := LoadAccess(global.NAV_DB, user.Guid)
+	if err != nil {
+		return nil, err
 	}
+	user = &a.User
+	user.RoleList = a.Roles
+
 	token, claims, err := utils.LoginToken(user)
 	if err != nil {
 		global.NAV_LOG.Error("获取token失败", zap.Error(err))

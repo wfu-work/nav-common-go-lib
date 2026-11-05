@@ -2,43 +2,34 @@ package middlewares
 
 import (
 	"errors"
-	"path"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/wfu-work/nav-common-go-lib/global"
 	"github.com/wfu-work/nav-common-go-lib/response"
+	"github.com/wfu-work/nav-common-go-lib/services"
 	"github.com/wfu-work/nav-common-go-lib/utils"
+	"strings"
 )
 
-var jwtWhiteList = []string{
-	"/login/in",
-	"/login/captcha",
-	"/secret/encrypt",
-	"/secret/decrypt",
-	"/configs/license",
-	"/configs/license/upload",
-	"/configs/license/upload/buffer",
-	"/configs/uuid",
-	"/configs/version",
-	"/configs",
-	"/logs/chan",
-	"/oss/*",
+func publicEndpoint(method, p string) bool {
+	return (method == "GET" && (p == "/configs" || p == "/configs/license" || p == "/configs/version" || p == "/login/captcha")) || (method == "POST" && (p == "/login/in" || p == "/secret/encrypt"))
+}
+func selfEndpoint(method, p string) bool {
+	return (method == "GET" && (p == "/user/token" || p == "/company/current")) || (method == "PUT" && p == "/user/update/password") || (method == "POST" && p == "/login/out")
 }
 
 func JWTAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		urlPath := c.Request.URL.Path
 		urlPath = strings.TrimPrefix(urlPath, global.NAV_CONFIG.System.RouterPrefix)
-		for _, white := range jwtWhiteList {
-			if ok, _ := path.Match(white, urlPath); ok {
-				c.Next()
-				return
-			}
+		if publicEndpoint(c.Request.Method, urlPath) {
+			c.Next()
+			return
 		}
+
 		// 我们这里jwt鉴权取头部信息 token 登录时回返回token信息 这里前端需要把token存储到cookie或者本地localStorage中 不过需要跟后端协商过期时间 可以约定刷新令牌或者重新登录
 		token := utils.GetToken(c)
 		if token == "" {
@@ -68,14 +59,17 @@ func JWTAuth() gin.HandlerFunc {
 			return
 		}
 
-		// 已登录用户被管理员禁用 需要使该用户的jwt失效 此处比较消耗性能 如果需要 请自行打开
-		// 用户被删除的逻辑 需要优化 此处比较消耗性能 如果需要 请自行打开
-
-		//if user, err := userService.FindUserByUuid(claims.UUID.String()); err != nil || user.Enable == 2 {
-		//	_ = jwtService.JsonInBlacklist(system.JwtBlacklist{Jwt: token})
-		//	response.FailWithDetailed(gin.H{"reload": true}, err.Error(), c)
-		//	c.Abort()
-		//}
+		a, loadErr := services.LoadAccess(global.NAV_DB.WithContext(c.Request.Context()), claims.UserGuid)
+		if loadErr != nil || claims.AuthVersion != a.User.AuthVersion {
+			response.NoAuth("会话已失效，请重新登录", c)
+			c.Abort()
+			return
+		}
+		claims.CompanyGuid = a.User.CompanyGuid
+		claims.Username = a.User.Username
+		claims.RoleGuids = strings.Join(a.User.RoleGuidList, ",")
+		claims.RoleCodes = strings.Join(a.User.RoleCodeList, ",")
+		c.Set("access", a)
 		c.Set("claims", claims)
 		c.Set("userGuid", claims.UserGuid)
 		c.Set("userName", claims.Username)
@@ -108,6 +102,9 @@ func JWTAuth() gin.HandlerFunc {
 // @param: jwt string
 // @return: bool
 func isBlacklist(jwt string) bool {
+	if global.LOCAL_CACHE == nil {
+		return false
+	}
 	_, ok := global.LOCAL_CACHE.Get(jwt)
 	return ok
 }

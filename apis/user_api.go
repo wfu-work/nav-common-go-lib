@@ -6,195 +6,117 @@ import (
 	"github.com/wfu-work/nav-common-go-lib/global"
 	"github.com/wfu-work/nav-common-go-lib/response"
 	"github.com/wfu-work/nav-common-go-lib/services"
-	"github.com/wfu-work/nav-common-go-lib/utils"
 	"github.com/wfu-work/nav-common-go-lib/vos"
-	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 type UserApi struct{}
 
-// Save 创建用户
-// @Summary 创建用户
-// @Description 创建用户
-// @Tags 系统模块
-// @Security ApiKeyAuth
-// @Accept json
-// @Produce json
-// @Param data body domains.SysUser true "用户对象"
-// @Success 200 {object} response.Response{data=bool,msg=string}
-// @Router /user [post]
-func (i UserApi) Save(c *gin.Context) {
-	var sysUser domains.SysUser
-	err := c.ShouldBindJSON(&sysUser)
+func accessReply(c *gin.Context, v any, err error) {
 	if err != nil {
 		response.FailWithMessage(err.Error(), c)
 		return
 	}
-	err = utils.Verify(sysUser, utils.RoleVerify)
-	if err != nil {
-		response.FailWithMessage(err.Error(), c)
-		return
-	}
-	if sysUser.Guid == "" {
-		bean, _ := userService.GetByUserName(sysUser.Username)
-		if bean != nil {
-			response.FailWithMessage("用户名已存在", c)
-			return
-		}
-	}
-	err = services.UserServiceApp.Create(sysUser)
-	if err != nil {
-		global.NAV_LOG.Error("创建失败!", zap.Error(err))
-		response.Fail(false, c)
-		return
-	}
-	response.Ok(true, c)
+	response.Ok(v, c)
 }
-
-// DeleteByGuid 根据guid删除用户
-// @Summary 根据用户guid删除用户
-// @Description 根据用户guid删除用户
-// @Tags 系统模块
-// @Security ApiKeyAuth
-// @Accept json
-// @Produce json
-// @Param guid path string true "用户guid"
-// @Success 200 {object} response.Response{data=bool,msg=string}
-// @Router /user/{guid} [delete]
-func (i UserApi) DeleteByGuid(c *gin.Context) {
-	guid := c.Param("guid")
-	err := userService.DeleteByGuid(guid)
-	if err != nil {
-		global.NAV_LOG.Error("删除失败", zap.Error(err))
-		response.Fail(false, c)
+func (UserApi) Save(c *gin.Context) {
+	var req services.UserSaveRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		accessReply(c, nil, err)
 		return
 	}
-	response.Ok(true, c)
+	id, err := services.SaveManagedUser(services.RequestAccess(c), req)
+	accessReply(c, id, err)
 }
-
-// GetByGuid 获取用户信息
-// @Summary 根据用户guid获取用户
-// @Description 根据用户guid获取用户
-// @Tags 系统模块
-// @Security ApiKeyAuth
-// @Accept json
-// @Produce json
-// @Param guid path string true "用户guid"
-// @Success 200 {object} response.Response{data=domains.SysUser,msg=string}
-// @Router /user/{guid} [get]
-func (i UserApi) GetByGuid(c *gin.Context) {
-	guid := c.Param("guid")
-	t, err := userService.GetByGuid(guid)
-	if err != nil || t == nil {
-		global.NAV_LOG.Error("获取失败", zap.Error(err))
-		response.Fail(false, c)
-		return
-	}
-	role, err := userRoleService.GetByUserGuid(t.Guid)
-	if err == nil && role != nil {
-		t.RoleCodeList = []string{role.Code}
-		t.RoleGuidList = []string{role.Guid}
-	}
-	response.Ok(t, c)
+func (UserApi) DeleteByGuid(c *gin.Context) {
+	accessReply(c, true, services.DeleteManagedUser(services.RequestAccess(c), c.Param("guid")))
 }
-
-// List 分页获取用户列表
-// @Summary 分页获取用户列表
-// @Description 分页获取用户列表
-// @Tags 系统模块
-// @Security ApiKeyAuth
-// @Accept json
-// @Produce json
-// @Param data  query domains.PageInfo true  "页码, 每页大小"
-// @Success 200  {object}  response.Response{data=domains.PageResult,msg=string}  "分页获取用户列表,返回包括列表,总数,页码,每页数量"
-// @Router /user/list [get]
-func (i UserApi) List(c *gin.Context) {
-	var pageInfo domains.PageInfo
-	err := c.ShouldBindQuery(&pageInfo)
-	if err != nil {
-		response.FailWithMessage(err.Error(), c)
+func (UserApi) GetByGuid(c *gin.Context) {
+	var u domains.SysUser
+	db := services.AccessDB(c, &u)
+	if err := db.Where("guid = ?", c.Param("guid")).First(&u).Error; err != nil {
+		accessReply(c, nil, err)
 		return
 	}
-	err = utils.Verify(pageInfo, utils.PageInfoVerify)
-	if err != nil {
-		response.FailWithMessage(err.Error(), c)
-		return
-	}
-	list, total, err := userService.List(pageInfo, "username,phone")
-	if err != nil {
-		global.NAV_LOG.Error("获取失败!", zap.Error(err))
-		response.Fail(nil, c)
-		return
-	}
-	response.Ok(domains.PageResult{
-		Data:  list,
-		Total: total,
-		Page:  pageInfo.Page,
-		Size:  pageInfo.Size,
-	}, c)
+	populateUserRoles(&u)
+	response.Ok(u, c)
 }
-
-// GetUserByToken 根据token获取用户信息
-// @Summary 根据token获取用户信息
-// @Description 根据token获取用户信息
-// @Tags 系统模块
-// @Security ApiKeyAuth
-// @Accept json
-// @Produce json
-// @Success 200 {object} response.Response{data=domains.SysUser,msg=string}
-// @Router /user/token [get]
-func (i UserApi) GetUserByToken(c *gin.Context) {
-	userGuid := utils.GetUserGuid(c)
-	if userGuid == "" {
-		global.NAV_LOG.Error("未获取到token中的用户guid")
-		response.Fail(nil, c)
-		return
+func populateUserRoles(u *domains.SysUser) {
+	var roles []domains.SysRole
+	global.NAV_DB.Model(&domains.SysRole{}).Joins("JOIN sys_user_role ur ON ur.role_guid=sys_role.guid").Where("ur.user_guid = ? AND sys_role.company_guid = ?", u.Guid, u.CompanyGuid).Find(&roles)
+	u.RoleGuidList = []string{}
+	u.RoleCodeList = []string{}
+	for _, r := range roles {
+		u.RoleGuidList = append(u.RoleGuidList, r.Guid)
+		u.RoleCodeList = append(u.RoleCodeList, r.Code)
 	}
-	t, err := userService.GetByGuid(userGuid)
-	if err != nil {
-		global.NAV_LOG.Error("获取失败", zap.Error(err))
-		response.Fail(nil, c)
-		return
-	}
-	role, err := userRoleService.GetByUserGuid(t.Guid)
-	if err == nil && role != nil {
-		t.RoleCodeList = []string{role.Code}
-		t.RoleGuidList = []string{role.Guid}
-	}
-	response.Ok(t, c)
 }
-
-// UpdatePassword 修改用户密码
-// @Summary 修改用户密码
-// @Description 修改用户密码
-// @Tags 系统模块
-// @Security ApiKeyAuth
-// @Accept json
-// @Produce json
-// @Success 200 {object} response.Response{data=bool,msg=string}
-// @Router /user/update/password [put]
-func (i UserApi) UpdatePassword(c *gin.Context) {
-	userGuid := utils.GetUserGuid(c)
-	if userGuid == "" {
-		global.NAV_LOG.Error("未获取到token中的用户guid")
-		response.Fail(false, c)
+func (UserApi) List(c *gin.Context) {
+	var q domains.PageInfo
+	if err := c.ShouldBindQuery(&q); err != nil {
+		accessReply(c, nil, err)
 		return
 	}
-	var passwordVo vos.PasswordVo
-	err := c.ShouldBindJSON(&passwordVo)
-	if err != nil {
-		response.FailWithMessage(err.Error(), c)
+	db := services.AccessDB(c, &domains.SysUser{})
+	if q.Content != "" {
+		db = db.Where("(username LIKE ? OR nick_name LIKE ? OR phone LIKE ?)", "%"+q.Content+"%", "%"+q.Content+"%", "%"+q.Content+"%")
+	}
+	var n int64
+	if err := db.Count(&n).Error; err != nil {
+		accessReply(c, nil, err)
 		return
 	}
-	err = utils.Verify(passwordVo, utils.PasswordVerify)
-	if err != nil {
-		response.FailWithMessage(err.Error(), c)
+	var users []domains.SysUser
+	if err := db.Scopes(q.Paginate()).Order("id DESC").Find(&users).Error; err != nil {
+		accessReply(c, nil, err)
 		return
 	}
-	result, err := userService.UpdatePassword(userGuid, &passwordVo)
-	if err != nil {
-		response.FailWithMessage(err.Error(), c)
+	for i := range users {
+		populateUserRoles(&users[i])
+		users[i].IsPlatformAdmin = users[i].PlatformAdmin()
+	}
+	response.Ok(domains.PageResult{Data: users, Total: n, Page: q.Page, Size: q.Size}, c)
+}
+func (UserApi) GetUserByToken(c *gin.Context) {
+	a := services.RequestAccess(c)
+	if a == nil {
+		response.NoAuth("未登录", c)
 		return
 	}
-	response.OkWithData(result, c)
+	response.Ok(a.User, c)
+}
+func (UserApi) UpdatePassword(c *gin.Context) {
+	a := services.RequestAccess(c)
+	if a == nil {
+		response.NoAuth("未登录", c)
+		return
+	}
+	var req vos.PasswordVo
+	if err := c.ShouldBindJSON(&req); err != nil {
+		accessReply(c, nil, err)
+		return
+	}
+	ok, err := services.UserServiceApp.UpdatePassword(a.User.Guid, &req)
+	if err == nil {
+		err = global.NAV_DB.Model(&domains.SysUser{}).Where("guid = ?", a.User.Guid).UpdateColumn("auth_version", gorm.Expr("auth_version + 1")).Error
+	}
+	accessReply(c, ok, err)
+}
+func (UserApi) SetRoles(c *gin.Context) {
+	var req struct {
+		RoleGuids []string `json:"roleGuids"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		accessReply(c, nil, err)
+		return
+	}
+	a := services.RequestAccess(c)
+	var u domains.SysUser
+	if err := services.AccessDB(c, &u).Where("guid = ?", c.Param("guid")).First(&u).Error; err != nil {
+		accessReply(c, nil, err)
+		return
+	}
+	enabled := u.Enable
+	id, err := services.SaveManagedUser(a, services.UserSaveRequest{Guid: u.Guid, CompanyGuid: u.CompanyGuid, Username: u.Username, NickName: u.NickName, Email: u.Email, Phone: u.Phone, Enable: &enabled, RoleGuidList: &req.RoleGuids})
+	accessReply(c, id, err)
 }

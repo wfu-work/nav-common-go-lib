@@ -19,6 +19,7 @@ type CustomClaims struct {
 }
 
 type BaseClaims struct {
+	AuthVersion uint
 	UserGuid    string
 	Username    string
 	CompanyGuid string

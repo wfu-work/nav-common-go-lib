@@ -181,6 +181,9 @@ func ClearToken(c *gin.Context) {
 }
 
 func GetClaims(c *gin.Context) (*configs.CustomClaims, error) {
+	if v, ok := c.Get("claims"); ok {
+		return v.(*configs.CustomClaims), nil
+	}
 	token := GetToken(c)
 	j := NewJWT()
 	claims, err := j.ParseToken(token)
@@ -255,6 +258,9 @@ func LoginToken(user domains.Login) (token string, claims configs.CustomClaims, 
 		RoleGuids:   user.GetRoleGuids(),
 		RoleCodes:   user.GetRoleCodes(),
 	})
+	if u, ok := user.(*domains.SysUser); ok {
+		claims.AuthVersion = u.AuthVersion
+	}
 	token, err = j.CreateToken(claims)
 	return token, claims, err
 }

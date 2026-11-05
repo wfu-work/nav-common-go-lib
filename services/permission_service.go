@@ -82,6 +82,64 @@ func (s *PermissionService) SetRolePermissions(roleGuid string, permissionGuids 
 		return errors.New("role guid is required")
 	}
 	permissionGuids = normalizeGuidList(permissionGuids)
+	var role domains.SysRole
+	if err := s.DB().Where("guid = ?", roleGuid).First(&role).Error; err != nil {
+		return err
+	}
+	var all []domains.SysPermission
+	if err := s.DB().Where("enabled = ?", true).Find(&all).Error; err != nil {
+		return err
+	}
+	byGuid := map[string]domains.SysPermission{}
+	byCode := map[string]domains.SysPermission{}
+	children := map[string][]string{}
+	for _, p := range all {
+		byGuid[p.Guid] = p
+		byCode[p.Code] = p
+		if p.Type == domains.PermissionTypeAPI {
+			children[p.ParentGuid] = append(children[p.ParentGuid], p.Guid)
+		}
+	}
+	selected := map[string]bool{}
+	var add func(string) error
+	add = func(id string) error {
+		if selected[id] {
+			return nil
+		}
+		p, ok := byGuid[id]
+		if !ok {
+			return errors.New("权限不存在或已停用")
+		}
+		if role.CompanyGuid != "" && p.Scope != "company" {
+			return errors.New("企业角色不能授予平台权限")
+		}
+		selected[id] = true
+		for _, code := range p.Dependencies {
+			dep, ok := byCode[code]
+			if !ok {
+				return errors.New("权限依赖不存在")
+			}
+			if err := add(dep.Guid); err != nil {
+				return err
+			}
+		}
+		for _, child := range children[id] {
+			if err := add(child); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	for _, id := range permissionGuids {
+		if err := add(id); err != nil {
+			return err
+		}
+	}
+	permissionGuids = []string{}
+	for id := range selected {
+		permissionGuids = append(permissionGuids, id)
+	}
+
 	return s.DB().Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("role_guid = ?", roleGuid).Delete(&domains.SysRolePermission{}).Error; err != nil {
 			return err
@@ -129,7 +187,8 @@ func (s *PermissionService) RolePermissionPolicies() ([]RolePermissionPolicy, er
 		Table(domains.SysRolePermission{}.TableName()+" AS rp").
 		Select("rp.role_guid AS role_guid, p.path AS path, p.method AS method").
 		Joins("JOIN "+domains.SysPermission{}.TableName()+" AS p ON p.guid = rp.permission_guid").
-		Where("p.enabled = ? AND p.type = ? AND p.path <> ?", true, domains.PermissionTypeAPI, "").
+		Joins("JOIN sys_role r ON r.guid = rp.role_guid").
+		Where("p.enabled = ? AND p.type = ? AND p.path <> ? AND p.deleted_time IS NULL AND r.deleted_time IS NULL AND r.enabled = ? AND (r.company_guid = ? OR p.scope = ?)", true, domains.PermissionTypeAPI, "", true, "", "company").
 		Find(&policies).Error
 	for i := range policies {
 		policies[i].Path = normalizePermissionPath(policies[i].Path)

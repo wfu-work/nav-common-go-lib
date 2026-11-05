@@ -2,8 +2,9 @@ package domains
 
 type SysCompany struct {
 	BaseDataEntity
+	Enabled      bool   `json:"enabled" gorm:"default:true;index"`
 	Name         string `json:"name" gorm:"size:50;comment:公司名称"`
-	Code         string `json:"code" gorm:"size:50;comment:公司编号"`
+	Code         string `json:"code" gorm:"size:50;uniqueIndex;comment:公司编号"`
 	Phone        string `json:"phone" gorm:"size:11;comment:公司电话"`
 	Email        string `json:"email" gorm:"size:50;comment:公司邮箱"`
 	Logo         string `json:"logo" gorm:"comment:图标"`

@@ -11,6 +11,7 @@ func (s *UserRouter) InitUserRouter(Router *gin.RouterGroup) {
 	routerLogger := Router.Group("user").Use(middlewares.ApiLogger())
 	router := Router.Group("user")
 	{
+		routerLogger.PUT(":guid/roles", userApi.SetRoles)
 		routerLogger.POST("", userApi.Save)                         // 新增用户
 		routerLogger.DELETE(":guid", userApi.DeleteByGuid)          // 根据guid删除用户
 		routerLogger.PUT("update/password", userApi.UpdatePassword) // 修改用户密码

@@ -34,3 +34,10 @@ func (s UserRoleService) GetByUserGuid(userGuid string) (*domains.SysRole, error
 	role, err := RoleServiceApp.WithDB(s.DB()).GetByGuid(result.RoleGuid)
 	return role, err
 }
+
+// ListByUserGuid returns every active role belonging to the user's company.
+func (s UserRoleService) ListByUserGuid(userGuid string) ([]domains.SysRole, error) {
+	var roles []domains.SysRole
+	err := s.DB().Model(&domains.SysRole{}).Joins("JOIN sys_user_role ur ON ur.role_guid=sys_role.guid JOIN sys_user u ON u.guid=ur.user_guid").Where("u.guid = ? AND sys_role.company_guid=u.company_guid AND sys_role.enabled = ? AND u.deleted_time IS NULL", userGuid, true).Find(&roles).Error
+	return roles, err
+}

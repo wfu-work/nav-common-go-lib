@@ -6,20 +6,25 @@ import (
 
 type SysUser struct {
 	BaseDataEntity
-	CompanyGuid  string    `json:"companyGuid" gorm:"size:50;comment:企业guid"`
-	Username     string    `json:"username" gorm:"index;size:50;comment:用户名"`
-	Password     string    `json:"-"  gorm:"comment:用户密码"`
-	Salt         string    `json:"-"  gorm:"comment:盐"`
-	NickName     string    `json:"nickName" gorm:"size:50;comment:用户昵称"`
-	Avatar       string    `json:"avatar" gorm:"comment:用户头像"`
-	Phone        string    `json:"phone"  gorm:"comment:手机号"`
-	Email        string    `json:"email"  gorm:"comment:邮箱"`
-	Gender       int       `json:"gender" gorm:"default:0;comment:性别（0.未知，1.男，2.女）"`
-	Enable       int       `json:"enable" gorm:"default:1;comment:用户是否被冻结 1正常 0冻结"`
-	RoleList     []SysRole `json:"-" gorm:"-"`
-	RoleGuidList []string  `json:"roleGuidList" gorm:"-"`
-	RoleCodeList []string  `json:"roleCodeList" gorm:"-"`
-	Abilities    []string  `json:"abilities" gorm:"-"`
+	AuthVersion     uint            `json:"authVersion" gorm:"default:1"`
+	CompanyGuid     string          `json:"companyGuid" gorm:"size:50;comment:企业guid"`
+	Username        string          `json:"username" gorm:"index;size:50;comment:用户名"`
+	Password        string          `json:"-"  gorm:"comment:用户密码"`
+	Salt            string          `json:"-"  gorm:"comment:盐"`
+	NickName        string          `json:"nickName" gorm:"size:50;comment:用户昵称"`
+	Avatar          string          `json:"avatar" gorm:"comment:用户头像"`
+	Phone           string          `json:"phone"  gorm:"comment:手机号"`
+	Email           string          `json:"email"  gorm:"comment:邮箱"`
+	Gender          int             `json:"gender" gorm:"default:0;comment:性别（0.未知，1.男，2.女）"`
+	Enable          int             `json:"enable" gorm:"default:1;comment:用户是否被冻结 1正常 0冻结"`
+	RoleList        []SysRole       `json:"-" gorm:"-"`
+	RoleGuidList    []string        `json:"roleGuidList" gorm:"-"`
+	RoleCodeList    []string        `json:"roleCodeList" gorm:"-"`
+	Abilities       []string        `json:"abilities" gorm:"-"`
+	AbilityList     []string        `json:"abilityList" gorm:"-"`
+	IsPlatformAdmin bool            `json:"isPlatformAdmin" gorm:"-"`
+	DataScope       string          `json:"dataScope" gorm:"-"`
+	Company         *CompanySummary `json:"company,omitempty" gorm:"-"`
 }
 
 type Login interface {

@@ -12,6 +12,7 @@ import (
 	"github.com/wfu-work/nav-common-go-lib/global"
 	"github.com/wfu-work/nav-common-go-lib/middlewares"
 	"github.com/wfu-work/nav-common-go-lib/scheduleds"
+	"github.com/wfu-work/nav-common-go-lib/services"
 	"github.com/wfu-work/nav-common-go-lib/utils"
 	"github.com/wfu-work/nav-common-go-lib/utils/ip2geo"
 	"go.uber.org/zap"
@@ -47,6 +48,11 @@ func (s *SysInit) InitializeSystem() error {
 			s.onTableInit()
 		}
 		if err = apis.DBService.InitDataBase(dbs.GetInitDB()); err != nil {
+			return err
+		}
+	}
+	if global.NAV_DB != nil {
+		if err = services.InitializeIdentity(global.NAV_DB); err != nil {
 			return err
 		}
 	}

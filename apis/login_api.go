@@ -1,6 +1,9 @@
 package apis
 
 import (
+	"github.com/wfu-work/nav-common-go-lib/domains"
+	"github.com/wfu-work/nav-common-go-lib/services"
+	"gorm.io/gorm"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -82,10 +85,17 @@ func (a LoginApi) LoginIn(c *gin.Context) {
 		response.FailWithMessage(err.Error(), c)
 		return
 	}
-	utils.SetToken(c, tokenVo.Token, int(tokenVo.Expired-time.Now().UnixMilli()))
+	utils.SetToken(c, tokenVo.Token, int((tokenVo.Expired-time.Now().UnixMilli())/1000))
 	response.OkWithData(tokenVo, c)
 }
 
 func (a LoginApi) LoginOut(c *gin.Context) {
-
+	aCtx := services.RequestAccess(c)
+	if aCtx == nil {
+		response.NoAuth("未登录", c)
+		return
+	}
+	global.NAV_DB.Model(&domains.SysUser{}).Where("guid = ?", aCtx.User.Guid).UpdateColumn("auth_version", gorm.Expr("auth_version + 1"))
+	utils.ClearToken(c)
+	response.Ok(true, c)
 }

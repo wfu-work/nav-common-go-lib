@@ -6,8 +6,10 @@ import (
 	"github.com/wfu-work/nav-common-go-lib/global"
 	"github.com/wfu-work/nav-common-go-lib/middlewares"
 	"github.com/wfu-work/nav-common-go-lib/response"
+	"github.com/wfu-work/nav-common-go-lib/services"
 	"github.com/wfu-work/nav-common-go-lib/utils"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 type PermissionApi struct{}
@@ -28,6 +30,9 @@ type RolePermissionUpdateRequest struct {
 // @Router /permission [post]
 // @Router /permission [put]
 func (i PermissionApi) Save(c *gin.Context) {
+	if !platformOnly(c) {
+		return
+	}
 	var entity domains.SysPermission
 	if err := c.ShouldBindJSON(&entity); err != nil {
 		response.FailWithMessage(err.Error(), c)
@@ -55,6 +60,9 @@ func (i PermissionApi) Save(c *gin.Context) {
 // @Success 200 {object} response.Response{data=bool,msg=string}
 // @Router /permission/{guid} [delete]
 func (i PermissionApi) DeleteByGuid(c *gin.Context) {
+	if !platformOnly(c) {
+		return
+	}
 	guid := c.Param("guid")
 	if err := permissionService.DeletePermission(guid); err != nil {
 		global.NAV_LOG.Error("删除权限失败", zap.Error(err))
@@ -87,7 +95,8 @@ func (i PermissionApi) List(c *gin.Context) {
 		response.FailWithMessage(err.Error(), c)
 		return
 	}
-	list, total, err := permissionService.List(pageInfo, "name,code,path,method")
+	svc := permissionService.WithDB(permissionDB(c))
+	list, total, err := svc.List(pageInfo, "name,code,path,method")
 	if err != nil {
 		global.NAV_LOG.Error("获取权限列表失败", zap.Error(err))
 		response.Fail(nil, c)
@@ -118,7 +127,7 @@ func (i PermissionApi) ListAll(c *gin.Context) {
 			params[key] = val[0]
 		}
 	}
-	result, err := permissionService.ListByFields(params)
+	result, err := permissionService.WithDB(permissionDB(c)).ListByFields(params)
 	if err != nil {
 		global.NAV_LOG.Error("获取权限列表失败", zap.Error(err))
 		response.Fail(nil, c)
@@ -138,6 +147,9 @@ func (i PermissionApi) ListAll(c *gin.Context) {
 // @Success 200 {object} response.Response{data=[]domains.SysPermission,msg=string}
 // @Router /role/{guid}/permissions [get]
 func (i PermissionApi) RolePermissions(c *gin.Context) {
+	if !checkRoleScope(c) {
+		return
+	}
 	result, err := permissionService.RolePermissions(c.Param("guid"))
 	if err != nil {
 		global.NAV_LOG.Error("获取角色权限失败", zap.Error(err))
@@ -159,6 +171,9 @@ func (i PermissionApi) RolePermissions(c *gin.Context) {
 // @Success 200 {object} response.Response{data=bool,msg=string}
 // @Router /role/{guid}/permissions [put]
 func (i PermissionApi) SetRolePermissions(c *gin.Context) {
+	if !checkRoleScope(c) {
+		return
+	}
 	var req RolePermissionUpdateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.FailWithMessage(err.Error(), c)
@@ -180,6 +195,26 @@ func refreshCasbinAfterPermissionChange(c *gin.Context) bool {
 		global.NAV_LOG.Error("刷新Casbin策略失败", zap.Error(err))
 		response.FailWithMessage("权限已保存，但刷新权限缓存失败："+err.Error(), c)
 		c.Abort()
+		return false
+	}
+	return true
+}
+
+func permissionDB(c *gin.Context) *gorm.DB {
+	db := global.NAV_DB
+	a := services.RequestAccess(c)
+	if a == nil {
+		return db.Where("1=0")
+	}
+	if !a.PlatformAdmin() {
+		db = db.Where("scope = ? AND enabled = ?", "company", true)
+	}
+	return db
+}
+func checkRoleScope(c *gin.Context) bool {
+	var role domains.SysRole
+	if err := services.AccessDB(c, &role).Where("guid = ?", c.Param("guid")).First(&role).Error; err != nil || role.CompanyGuid == "" {
+		response.NoPermission("无权操作此角色", c)
 		return false
 	}
 	return true

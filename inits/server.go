@@ -128,7 +128,7 @@ func (s *SysInit) Routers() *gin.Engine {
 		PublicGroup.GET("/health", func(c *gin.Context) {
 			c.JSON(http.StatusOK, "ok")
 		})
-		PublicGroup.GET(global.NAV_CONFIG.Local.ProxyOssPath+"/*filepath", gin.WrapH(
+		PublicGroup.GET(global.NAV_CONFIG.Local.ProxyOssPath+"/*filepath", middlewares.JWTAuth(), middlewares.CasbinHandler(), gin.WrapH(
 			http.StripPrefix(global.NAV_CONFIG.System.RouterPrefix+global.NAV_CONFIG.Local.ProxyOssPath+"/", http.FileServer(http.Dir(global.NAV_CONFIG.Local.OssPath))),
 		))
 	}
@@ -145,8 +145,8 @@ func (s *SysInit) Routers() *gin.Engine {
 		systemRouter.InitLoginRouter(PrivateGroup, PublicGroup) // 注册登录路由
 		systemRouter.InitLoginLogRouter(PrivateGroup)           // 注册登录日志路由
 		systemRouter.InitFileRouter(PrivateGroup)               // 注册文件路由
-		systemRouter.InitSecretRouter(PublicGroup)              // 注册加密路由
-		systemRouter.InitRegisterRouter(PublicGroup)            // 注册用户注册路由
+		systemRouter.InitSecretRouter(PrivateGroup)             // 注册加密路由
+		systemRouter.InitRegisterRouter(PrivateGroup)           // 注册用户注册路由
 	}
 
 	{
