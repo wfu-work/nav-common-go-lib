@@ -14,10 +14,6 @@ import (
 
 type PermissionApi struct{}
 
-type RolePermissionUpdateRequest struct {
-	PermissionGuids []string `json:"permissionGuids"`
-}
-
 // Save 创建或更新系统权限
 // @Summary 创建或更新系统权限
 // @Description 创建或更新系统权限
@@ -136,60 +132,6 @@ func (i PermissionApi) ListAll(c *gin.Context) {
 	response.Ok(result, c)
 }
 
-// RolePermissions 获取角色权限
-// @Summary 获取角色权限
-// @Description 获取角色权限
-// @Tags 系统模块
-// @Security ApiKeyAuth
-// @Accept json
-// @Produce json
-// @Param guid path string true "角色guid"
-// @Success 200 {object} response.Response{data=[]domains.SysPermission,msg=string}
-// @Router /role/{guid}/permissions [get]
-func (i PermissionApi) RolePermissions(c *gin.Context) {
-	if !checkRoleScope(c) {
-		return
-	}
-	result, err := permissionService.RolePermissions(c.Param("guid"))
-	if err != nil {
-		global.NAV_LOG.Error("获取角色权限失败", zap.Error(err))
-		response.FailWithMessage(err.Error(), c)
-		return
-	}
-	response.Ok(result, c)
-}
-
-// SetRolePermissions 设置角色权限
-// @Summary 设置角色权限
-// @Description 设置角色权限
-// @Tags 系统模块
-// @Security ApiKeyAuth
-// @Accept json
-// @Produce json
-// @Param guid path string true "角色guid"
-// @Param data body RolePermissionUpdateRequest true "权限GUID列表"
-// @Success 200 {object} response.Response{data=bool,msg=string}
-// @Router /role/{guid}/permissions [put]
-func (i PermissionApi) SetRolePermissions(c *gin.Context) {
-	if !checkRoleScope(c) {
-		return
-	}
-	var req RolePermissionUpdateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.FailWithMessage(err.Error(), c)
-		return
-	}
-	if err := permissionService.SetRolePermissions(c.Param("guid"), req.PermissionGuids); err != nil {
-		global.NAV_LOG.Error("设置角色权限失败", zap.Error(err))
-		response.FailWithMessage(err.Error(), c)
-		return
-	}
-	if !refreshCasbinAfterPermissionChange(c) {
-		return
-	}
-	response.Ok(true, c)
-}
-
 func refreshCasbinAfterPermissionChange(c *gin.Context) bool {
 	if err := middlewares.RefreshCasbin(); err != nil {
 		global.NAV_LOG.Error("刷新Casbin策略失败", zap.Error(err))
@@ -210,12 +152,4 @@ func permissionDB(c *gin.Context) *gorm.DB {
 		db = db.Where("scope = ? AND enabled = ?", "company", true)
 	}
 	return db
-}
-func checkRoleScope(c *gin.Context) bool {
-	var role domains.SysRole
-	if err := services.AccessDB(c, &role).Where("guid = ?", c.Param("guid")).First(&role).Error; err != nil || role.CompanyGuid == "" {
-		response.NoPermission("无权操作此角色", c)
-		return false
-	}
-	return true
 }

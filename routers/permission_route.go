@@ -20,10 +20,4 @@ func (s *PermissionRouter) InitPermissionRouter(Router *gin.RouterGroup) {
 		router.GET("list/all", permissionApi.ListAll)
 	}
 
-	roleRouterLogger := Router.Group("role").Use(middlewares.ApiLogger())
-	roleRouter := Router.Group("role")
-	{
-		roleRouter.GET(":guid/permissions", permissionApi.RolePermissions)
-		roleRouterLogger.PUT(":guid/permissions", permissionApi.SetRolePermissions)
-	}
 }

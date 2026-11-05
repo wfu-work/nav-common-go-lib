@@ -4,6 +4,7 @@ type SysRole struct {
 	BaseDataEntity
 	CompanyGuid            string `json:"companyGuid" gorm:"size:50;uniqueIndex:idx_company_role_code;index"`
 	Enabled                bool   `json:"enabled" gorm:"default:true"`
+	MenusInitialized       bool   `json:"-"`
 	PermissionsInitialized bool   `json:"-"`
 	BuiltIn                bool   `json:"builtIn"`
 	Name                   string `json:"name" gorm:"size:50;comment:角色名"`

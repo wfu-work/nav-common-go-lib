@@ -142,7 +142,7 @@ func InitializeCompanyRoles(db *gorm.DB, company string) error {
 			return err
 		}
 	}
-	return nil
+	return initializeRegisteredRoleMenus(db, company)
 }
 
 type UserSaveRequest struct {

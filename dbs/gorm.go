@@ -50,6 +50,8 @@ func RegisterTables() error {
 		domains.SysPermission{},
 		domains.SysRolePermission{},
 		domains.SysCompany{},
+		domains.SysMenu{},
+		domains.SysRoleMenu{},
 	)
 	if err != nil {
 		global.NAV_LOG.Error("register table failed", zap.Error(err))
