@@ -7,6 +7,7 @@ import (
 	"crypto/md5"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -15,8 +16,15 @@ var AesKey = "wh&navfirst&2020"
 
 // BcryptHash 使用 bcrypt 对密码进行加密
 func BcryptHash(password string) string {
-	fromPassword, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	return string(fromPassword)
+	hash, _ := BcryptHashE(password)
+	return hash
+}
+
+// BcryptHashE returns bcrypt validation errors to callers that persist passwords.
+// BcryptHash is retained for source compatibility; new code should use BcryptHashE.
+func BcryptHashE(password string) (string, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	return string(hash), err
 }
 
 // BcryptCheck 对比明文密码和数据库的哈希值
@@ -65,10 +73,16 @@ func AesDecryptWithKey(cipherText, key string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if len(crypted) == 0 || len(crypted)%block.BlockSize() != 0 {
+		return "", errors.New("invalid AES ciphertext length")
+	}
 	blockMode := cipher.NewCBCDecrypter(block, []byte(key)[:block.BlockSize()])
 	origData := make([]byte, len(crypted))
 	blockMode.CryptBlocks(origData, crypted)
-	origData = pkcs7UnPadding(origData)
+	origData, err = unpadPKCS7(origData, block.BlockSize())
+	if err != nil {
+		return "", err
+	}
 	return string(origData), nil
 }
 
@@ -81,7 +95,22 @@ func pkcs7Padding(ciphertext []byte, blockSize int) []byte {
 
 // PKCS7去填充
 func pkcs7UnPadding(origData []byte) []byte {
-	length := len(origData)
-	unPadding := int(origData[length-1])
-	return origData[:(length - unPadding)]
+	data, _ := unpadPKCS7(origData, aes.BlockSize)
+	return data
+}
+
+func unpadPKCS7(data []byte, blockSize int) ([]byte, error) {
+	if len(data) == 0 || len(data)%blockSize != 0 {
+		return nil, errors.New("invalid PKCS7 padding")
+	}
+	n := int(data[len(data)-1])
+	if n == 0 || n > blockSize || n > len(data) {
+		return nil, errors.New("invalid PKCS7 padding")
+	}
+	for _, b := range data[len(data)-n:] {
+		if int(b) != n {
+			return nil, errors.New("invalid PKCS7 padding")
+		}
+	}
+	return data[:len(data)-n], nil
 }

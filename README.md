@@ -29,7 +29,8 @@ module github.com/wfu-work/nav-common-go-lib
 
 ## 环境要求
 
-- Go `1.26+`
+- Go `1.27.3+`（与 `go.mod` 中的最低版本一致）
+- SQLite 使用官方 Gorm 驱动，编译时需要启用 CGO 并提供 C 编译器
 - 推荐在独立业务项目中作为基础库引用
 - 如果启用对应能力，需要准备：
   - `SQLite` / `MySQL` / `PostgreSQL`
@@ -100,7 +101,7 @@ func main() {
 	})
 
 	sys.OnShutInit(func() {
-		// 优雅关闭前的资源释放
+		// HTTP 请求与后台任务结束后，释放业务资源
 	})
 
 	if err := sys.InitE(); err != nil {
@@ -143,12 +144,24 @@ system:
   oss-type: local
   use-redis: false
   use-strict-auth: false
+  trusted-proxies: []
+  max-request-bytes: 16777216
+  max-upload-bytes: 33554432
+  enable-swagger: false
 
 jwt:
   issuer: nav-app
   signing-key: replace-with-a-real-secret
   expires-time: 7d
   buffer-time: 1d
+  cookie-secure: false # HTTPS 反向代理部署时设为 true
+  cookie-same-site: lax
+
+cors:
+  mode: whitelist
+  whitelist:
+    - allow-origin: https://admin.example.com
+      allow-credentials: true
 
 local:
   oss-path: ./data/oss
@@ -161,8 +174,8 @@ sqlite:
   db-name: nav-app.db
   log-mode: error
   log-zap: false
-  max-idle-conns: 10
-  max-open-conns: 100
+  max-idle-conns: 1
+  max-open-conns: 1
 
 zap:
   level: info
@@ -171,12 +184,18 @@ zap:
   log-in-console: true
 ```
 
+运行时使用 `global.Config()` 读取只读配置快照；需要修改时先 `Clone()`，由 `global.SetConfig()` 发布。请求中通过 `global.RequestConfig(c)` 获取本次请求固定的快照。原 `global.NAV_CONFIG` 仅保留启动输入用途，运行期间不要直接读写。扩展配置使用 `global.RegisterExtra(key, value)` 注册，注册后的值应保持不可变。
+
+文件热更新只接受 JWT 有效期与刷新窗口、CORS 和验证码设置。数据库、Redis、日志、路径、路由、密钥、Cookie、代理与请求上限等修改需要重启；校验失败或涉及重启的文件变更不会替换当前快照。配置写入接口通过临时文件和重命名原子保存文件。
+
+默认 CORS 为白名单模式，需要配置前端 Origin 才能跨域读取响应。JWT Cookie 默认为 host-only、HttpOnly、SameSite=Lax；HTTPS 反向代理场景请设置 `cookie-secure: true`，同时显式配置可信代理。普通请求体上限为 16 MiB，上传请求为 32 MiB（包含 multipart/base64 编码开销），文件服务还会检查实际文件大小。
+
 ## 默认路由
 
 默认内置一批系统级接口，主要包括：
 
 - `/health` 健康检查
-- `/swagger/index.html` Swagger 文档入口
+- `/swagger/index.html` Swagger 文档入口（显式启用后注册）
 - 用户、角色、企业、登录、登录日志
 - 文件上传与访问
 - 系统配置
@@ -188,6 +207,8 @@ zap:
 - `GET /api/health`
 - `GET /api/swagger/index.html`
 
+Swagger 默认关闭；启用 `system.enable-swagger` 后，由宿主应用导入自己生成的文档包。
+
 ## 扩展点
 
 `inits.SysInit` 提供了一组钩子，方便业务项目扩展：
@@ -196,10 +217,12 @@ zap:
 - `OnRouterInit`：追加业务路由
 - `OnTableInit`：初始化业务表
 - `OnScheInit`：追加定时任务
-- `OnCacheInit`：预留缓存初始化扩展
+- `OnCacheInit`：本地缓存初始化完成后执行
 - `OnOtherInit`：追加其他初始化逻辑
 - `OnClearInit`：注册数据库清理规则
-- `OnShutInit`：服务关闭前收尾
+- `OnShutInit`：请求与后台任务结束后、数据库等资源关闭前收尾
+
+`InitContext(ctx)` 可由上层取消服务；`InitE()` 保留信号退出方式。关闭时先等待 HTTP 请求完成，再停止配置监听、定时任务，持久化缓存并排空审计队列，最后关闭 IP 库、Redis、数据库和日志。`Close()` 可重复调用；初始化失败也会回收已经创建的资源。
 
 ## 事务用法
 
@@ -242,6 +265,8 @@ userSvc := services.UserServiceApp.WithDB(tx)
 companySvc := services.CompanyServiceApp.WithDB(tx)
 ```
 
+也可以使用 `services.NewServiceGroup(db)` 批量构造绑定数据库的业务服务，或在事务内传入 `tx`。HTTP 默认装配仍使用全局资源，完整应用应在独立进程运行。
+
 当前已支持 `WithDB()` 的典型服务包括：
 
 - `UserService`
@@ -258,12 +283,14 @@ companySvc := services.CompanyServiceApp.WithDB(tx)
 
 - `global.NAV_DB`：Gorm 数据库连接
 - `global.NAV_REDIS`：Redis 客户端
-- `global.NAV_CONFIG`：系统配置
+- `global.Config()`：系统配置只读快照
 - `global.NAV_LOG`：Zap 日志对象
 - `global.LOCAL_CACHE`：本地缓存
 
 ## 开发建议
 
+- 依赖升级记录与优化分析见 [2026-11-05 检查报告](docs/dependency-upgrade-and-review-2026-11-05.md)
+- 本次优化内容、行为变化与验证见 [代码优化实施说明](docs/optimization-implementation.md)
 - 建议把这个库作为“基础设施层”使用，不要把所有业务逻辑都塞进公共库
 - 业务实体、业务路由、业务服务建议在业务仓库中实现
 - 生产环境必须显式配置 `jwt.signing-key`
@@ -279,7 +306,7 @@ companySvc := services.CompanyServiceApp.WithDB(tx)
 
 平台身份只属于固定 GUID 的内置 `admin` 账号，所有权限及企业数据均可访问；`SUPER_ADMIN` 角色编码不能赋予平台身份。企业用户必须归属企业，用户角色只能来自同一企业。企业角色权限仅允许 `scope=company` 的权限点。菜单/按钮可通过 `dependencies` 声明依赖，其下 API 权限在保存授权时自动展开。
 
-嵌入宿主在表结构及种子数据初始化完成后，调用 `services.InitializeIdentity(db)` 执行历史账号迁移；业务权限目录注册完成后，对各企业调用 `InitializeCompanyRoles` 完成一次性的预置角色授权。迁移将未归属企业的普通账号放入默认企业，复制旧企业角色并移除其他账号的历史平台身份。发现重名账号时迁移报错，需要先处理冲突。
+嵌入宿主在表结构及种子数据初始化完成、业务权限目录注册后，对各企业调用 `InitializeCompanyRoles` 完成预置角色授权。系统直接使用当前企业身份模型，不执行历史账号、角色或索引迁移；用户名包含已删除账号在内全局唯一，不允许复用。
 
 `POST /company` 创建企业时，同时提交 `adminUsername` 和经 `/secret/encrypt` 加密的 `adminPassword`；企业、预置角色、初始管理员在同一事务创建。`POST /user` 支持 `roleGuidList`，也可通过 `PUT /user/:guid/roles` 单独分配。`GET /user/token` 返回 `company` 摘要、`abilityList`、`isPlatformAdmin`、`isCompanyAdmin` 和 `dataScope`。`PUT /company/current` 只修改当前企业允许编辑的资料。
 

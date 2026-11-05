@@ -2,8 +2,9 @@ package dbs
 
 import (
 	"context"
+	"errors"
 
-	"github.com/pkg/errors"
+	"fmt"
 	"github.com/wfu-work/nav-common-go-lib/domains"
 	"gorm.io/gorm"
 )
@@ -60,7 +61,7 @@ func (i *initRole) InitializeData(ctx context.Context) (context.Context, error) 
 		{BaseDataEntity: domains.BaseDataEntity{Guid: "3a9ed1e6a5a334461b263e5a80207cc3"}, Name: "普通用户", Code: "USER", Sort: 3, Remark: "普通用户"},
 	}
 	if err := db.Create(&entities).Error; err != nil {
-		return ctx, errors.Wrapf(err, "%s表数据初始化失败!", domains.SysRole{}.TableName())
+		return ctx, fmt.Errorf("%s表数据初始化失败: %w", domains.SysRole{}.TableName(), err)
 	}
 	next := context.WithValue(ctx, i.InitializerName(), entities)
 	return next, nil

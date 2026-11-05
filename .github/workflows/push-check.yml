@@ -6,30 +6,83 @@ on:
       - main
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-
-      - name: Cache Go Build
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-
+          cache: true
+      - name: Check Module Files
+        run: |
+          go mod tidy -diff
+          go mod verify
       - name: Go Vet
         run: go vet ./...
+      - name: Go Test with Race Detection
+        run: go test -race -coverpkg=./... -coverprofile=coverage.out ./...
+      - name: Vulnerability Check
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+      - name: Report Available Dependency Updates
+        run: go list -m -u all
 
-      - name: Go Test
-        run: go test ./...
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: nav_common_test
+          MYSQL_DATABASE: nav_common_test
+          MYSQL_USER: nav_common
+          MYSQL_PASSWORD: nav_common_test
+        ports:
+          - 3306/tcp
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: nav_common_test
+          POSTGRES_USER: nav_common
+          POSTGRES_PASSWORD: nav_common_test
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd="pg_isready -U nav_common -d nav_common_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+      redis:
+        image: redis:7.4
+        ports:
+          - 6379/tcp
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      NAV_TEST_MYSQL_PORT: ${{ job.services.mysql.ports['3306'] }}
+      NAV_TEST_PGSQL_PORT: ${{ job.services.postgres.ports['5432'] }}
+      NAV_TEST_REDIS_ADDR: 127.0.0.1:${{ job.services.redis.ports['6379'] }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Database and Redis Integration Tests
+        run: go test -race -v ./dbs -run Integration

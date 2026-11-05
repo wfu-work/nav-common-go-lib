@@ -4,9 +4,11 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/casbin/casbin/v3"
 	"github.com/casbin/casbin/v3/model"
+	"github.com/casbin/casbin/v3/util"
 	"github.com/gin-gonic/gin"
 	"github.com/wfu-work/nav-common-go-lib/global"
 	"github.com/wfu-work/nav-common-go-lib/response"
@@ -85,7 +87,7 @@ func buildCasbinEnforcer() (*casbin.SyncedCachedEnforcer, error) {
 	if err != nil {
 		return nil, err
 	}
-	enforcer.SetExpireTime(60 * 60)
+	enforcer.SetExpireTime(time.Hour)
 	policies, err := services.PermissionServiceApp.RolePermissionPolicies()
 	if err != nil {
 		return nil, err
@@ -114,7 +116,7 @@ func newEmptyCasbinEnforcer() (*casbin.SyncedCachedEnforcer, error) {
 	if err != nil {
 		return nil, err
 	}
-	enforcer.SetExpireTime(60 * 60)
+	enforcer.SetExpireTime(time.Hour)
 	return enforcer, nil
 }
 
@@ -122,7 +124,7 @@ func newEmptyCasbinEnforcer() (*casbin.SyncedCachedEnforcer, error) {
 func CasbinHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		urlPath := c.Request.URL.Path
-		urlPath = strings.TrimPrefix(urlPath, global.NAV_CONFIG.System.RouterPrefix)
+		urlPath = strings.TrimPrefix(urlPath, global.RequestConfig(c).System.RouterPrefix)
 		method := strings.ToUpper(c.Request.Method)
 		if publicEndpoint(method, urlPath) || selfEndpoint(method, urlPath) {
 			c.Next()
@@ -140,7 +142,7 @@ func CasbinHandler() gin.HandlerFunc {
 		}
 		// Uploaded assets live under an immutable company prefix. Static reads
 		// still require a live authenticated user and never expose other tenants.
-		oss := strings.TrimRight(global.NAV_CONFIG.Local.ProxyOssPath, "/")
+		oss := strings.TrimRight(global.RequestConfig(c).Local.ProxyOssPath, "/")
 		if oss != "" && strings.HasPrefix(urlPath, oss+"/") {
 			relative := strings.TrimPrefix(urlPath, oss+"/")
 			if strings.HasPrefix(relative, "companies/"+a.User.CompanyGuid+"/") && !strings.Contains(relative, "..") && !strings.Contains(relative, "\\") {
@@ -175,6 +177,20 @@ func CasbinHandler() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+		// Live grants are authoritative even when another instance has changed
+		// permissions without refreshing this instance's cached enforcer.
+		current := false
+		for _, permission := range a.Permissions {
+			if permission.Type == "api" && permission.Path != "" && util.KeyMatch2(urlPath, permission.Path) && (permission.Method == "*" || strings.EqualFold(permission.Method, method)) {
+				current = true
+				break
+			}
+		}
+		if !current {
+			response.NoPermission("权限不足", c)
+			c.Abort()
+			return
+		}
 		waitUse, _ := utils.GetClaims(c)
 		e := GetCasbin()
 		if e == nil {
@@ -193,6 +209,18 @@ func CasbinHandler() gin.HandlerFunc {
 			if success {
 				c.Next()
 				return
+			}
+		}
+		// A newly granted permission can arrive before a local refresh. Rebuild
+		// once on a cache miss, after verifying that the live grant allows it.
+		if err := RefreshCasbin(); err == nil {
+			if fresh := GetCasbin(); fresh != nil {
+				for _, role := range a.Roles {
+					if allowed, err := fresh.Enforce(role.Guid, urlPath, method); err == nil && allowed {
+						c.Next()
+						return
+					}
+				}
 			}
 		}
 		response.NoPermission("权限不足", c)

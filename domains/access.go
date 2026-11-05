@@ -1,7 +1,6 @@
 package domains
 
 const BuiltinAdminGUID = "9a9ed1e6a5a334461b263e5a80207cc7"
-const DefaultCompanyGUID = "system-legacy-company"
 
 func (u SysUser) PlatformAdmin() bool {
 	return u.Guid == BuiltinAdminGUID && u.Username == "admin" && u.CompanyGuid == ""

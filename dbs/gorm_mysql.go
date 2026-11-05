@@ -9,7 +9,7 @@ import (
 
 // GormMysql 初始化Mysql数据库
 func GormMysql() (*gorm.DB, error) {
-	s := global.NAV_CONFIG.Mysql
+	s := global.Config().Mysql
 	return initMysqlDatabase(s)
 }
 
@@ -34,7 +34,10 @@ func initMysqlDatabase(s configs.Mysql) (*gorm.DB, error) {
 		return nil, err
 	} else {
 		db.InstanceSet("gorm:table_options", "ENGINE="+s.Engine)
-		sqlDB, _ := db.DB()
+		sqlDB, err := db.DB()
+		if err != nil {
+			return nil, err
+		}
 		sqlDB.SetMaxIdleConns(s.MaxIdleConns)
 		sqlDB.SetMaxOpenConns(s.MaxOpenConns)
 		return db, nil

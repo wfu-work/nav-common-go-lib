@@ -25,7 +25,7 @@ func selfEndpoint(method, p string) bool {
 func JWTAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		urlPath := c.Request.URL.Path
-		urlPath = strings.TrimPrefix(urlPath, global.NAV_CONFIG.System.RouterPrefix)
+		urlPath = strings.TrimPrefix(urlPath, global.RequestConfig(c).System.RouterPrefix)
 		if publicEndpoint(c.Request.Method, urlPath) && (urlPath != "/configs" || utils.GetToken(c) == "") {
 			c.Next()
 			return
@@ -76,14 +76,24 @@ func JWTAuth() gin.HandlerFunc {
 		c.Set("userName", claims.Username)
 		c.Set("companyGuid", claims.CompanyGuid)
 		if claims.ExpiresAt.Unix()-time.Now().Unix() < claims.BufferTime {
-			dr, _ := utils.ParseDuration(global.NAV_CONFIG.JWT.ExpiresTime)
+			dr, _ := utils.ParseDuration(global.RequestConfig(c).JWT.ExpiresTime)
 			claims.ExpiresAt = jwt.NewNumericDate(time.Now().Add(dr))
-			newToken, _ := j.CreateTokenByOldToken(token, *claims)
-			newClaims, _ := j.ParseToken(newToken)
+			newToken, err := j.CreateTokenByOldToken(token, *claims)
+			if err != nil {
+				response.NoAuth("令牌续期失败", c)
+				c.Abort()
+				return
+			}
+			newClaims, err := j.ParseToken(newToken)
+			if err != nil {
+				response.NoAuth("令牌续期失败", c)
+				c.Abort()
+				return
+			}
 			c.Header("new-token", newToken)
 			c.Header("new-expires-at", strconv.FormatInt(newClaims.ExpiresAt.Unix(), 10))
 			utils.SetToken(c, newToken, int(dr.Seconds()))
-			if global.NAV_CONFIG.System.UseMultipoint {
+			if global.RequestConfig(c).System.UseMultipoint {
 				_ = utils.SetRedisJWT(newToken, newClaims.Username)
 			}
 		}

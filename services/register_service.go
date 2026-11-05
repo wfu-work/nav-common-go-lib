@@ -41,7 +41,10 @@ func (s *RegisterService) RegisterUser(v *vos.RegisterVo) (bool, error) {
 	if err != nil {
 		return false, errors.New("解密错误")
 	}
-	bcryptPassword := utils.BcryptHash(password)
+	bcryptPassword, err := utils.BcryptHashE(password)
+	if err != nil {
+		return false, err
+	}
 	sysUser := &domains.SysUser{Username: v.Username, Password: bcryptPassword, Email: v.Email, Enable: 1}
 	err = s.DB().Create(sysUser).Error
 	return err == nil, err

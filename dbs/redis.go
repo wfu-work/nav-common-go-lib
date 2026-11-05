@@ -2,6 +2,7 @@ package dbs
 
 import (
 	"context"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/wfu-work/nav-common-go-lib/configs"
@@ -10,13 +11,16 @@ import (
 )
 
 func InitRedis() error {
-	if global.NAV_CONFIG.Redis.Addr != "" {
-		redisClient, err := initRedisClient(global.NAV_CONFIG.Redis)
-		if err != nil {
-			return err
-		}
-		global.NAV_REDIS = redisClient
+	config := global.Config()
+	if !config.System.UseRedis {
+		global.NAV_REDIS = nil
+		return nil
 	}
+	redisClient, err := initRedisClient(config.Redis)
+	if err != nil {
+		return err
+	}
+	global.NAV_REDIS = redisClient
 	return nil
 }
 
@@ -34,8 +38,11 @@ func initRedisClient(redisCfg configs.Redis) (redis.UniversalClient, error) {
 			DB:       redisCfg.DB,
 		})
 	}
-	pong, err := client.Ping(context.Background()).Result()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	pong, err := client.Ping(ctx).Result()
 	if err != nil {
+		_ = client.Close()
 		global.NAV_LOG.Error("redis connect ping failed, err:", zap.String("name", redisCfg.Name), zap.Error(err))
 		return nil, err
 	}

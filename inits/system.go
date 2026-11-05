@@ -1,10 +1,10 @@
 package inits
 
 import (
-	"bufio"
+	"context"
 	"errors"
 	"fmt"
-	"os"
+	"time"
 
 	"github.com/robfig/cron/v3"
 	"github.com/wfu-work/nav-common-go-lib/apis"
@@ -12,35 +12,46 @@ import (
 	"github.com/wfu-work/nav-common-go-lib/global"
 	"github.com/wfu-work/nav-common-go-lib/middlewares"
 	"github.com/wfu-work/nav-common-go-lib/scheduleds"
-	"github.com/wfu-work/nav-common-go-lib/services"
 	"github.com/wfu-work/nav-common-go-lib/utils"
 	"github.com/wfu-work/nav-common-go-lib/utils/ip2geo"
 	"go.uber.org/zap"
 )
 
-func (s *SysInit) InitializeSystem() error {
-	var err error
-	global.NAV_VIPER, err = middlewares.Viper()
+func (s *SysInit) InitializeSystem() error { return s.initializeSystem(context.Background()) }
+
+func (s *SysInit) initializeSystem(parent context.Context) (err error) {
+	if s.initialized {
+		return errors.New("system is already initialized; create a new SysInit")
+	}
+	s.initialized = true
+	if parent == nil {
+		parent = context.Background()
+	}
+	s.background, s.cancel = context.WithCancel(parent)
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, s.Close())
+		}
+	}()
+	global.NAV_VIPER, s.watcherStop, err = middlewares.LoadConfig(s.background)
 	if err != nil {
 		return err
 	}
-	global.NAV_LOG = middlewares.Zap()
+	global.NAV_LOG, s.loggerClose, err = middlewares.ZapWithConfig(global.Config().Zap)
+	if err != nil {
+		return err
+	}
 	zap.ReplaceGlobals(global.NAV_LOG)
-	if global.NAV_CONFIG.JWT.SigningKey == "" {
-		return errors.New("jwt.signing-key 未配置")
-	}
-	dbPath := utils.StringOrDefault(global.NAV_CONFIG.Sqlite.Path, "./data/")
-	if b, _ := utils.PathExists(dbPath); !b {
-		_ = utils.CreateDir(dbPath)
-	}
 	if err = dbs.InitRedis(); err != nil {
 		return err
 	}
+	s.redis = global.NAV_REDIS
 	global.NAV_DB, err = dbs.InitGorm()
 	if err != nil {
 		return err
 	}
-	if global.NAV_DB != nil {
+	s.db = global.NAV_DB
+	if s.db != nil {
 		if err = dbs.RegisterTables(); err != nil {
 			return err
 		}
@@ -51,57 +62,107 @@ func (s *SysInit) InitializeSystem() error {
 			return err
 		}
 	}
-	if global.NAV_DB != nil {
-		if err = services.InitializeIdentity(global.NAV_DB); err != nil {
-			return err
-		}
-	}
-	s.Shed()
+	s.auditStop = middlewares.StartAuditWriter(s.db, global.NAV_LOG, 1024)
 	if err = s.OtherInit(); err != nil {
 		return err
 	}
-	return nil
+	return s.startScheduled()
 }
 
 func (s *SysInit) OtherInit() error {
-	_, err := utils.ParseDuration(global.NAV_CONFIG.JWT.BufferTime)
-	if err != nil {
+	if s.background == nil {
+		s.background = context.Background()
+	}
+	s.cacheStop = utils.InitCacheContext(s.background)
+	if s.onCacheInit != nil {
+		s.onCacheInit()
+	}
+	if err := ip2geo.InitIpGeoLocation(); err != nil {
 		return err
 	}
-	file, err := os.Open("go.mod")
-	if err == nil {
-		defer file.Close()
-		scanner := bufio.NewScanner(file)
-		scanner.Scan()
-	}
-
-	utils.InitCache()
-	ip2geo.InitIpGeoLocation()
-
 	if s.onOtherInit != nil {
 		s.onOtherInit()
 	}
 	return nil
 }
 
-// Shed 定时任务
+// Shed is retained for hosts that register tasks explicitly.
 func (s *SysInit) Shed() {
-	timers := scheduleds.NewTimerTask()
-	go func() {
-		var option []cron.Option
-		option = append(option, cron.WithSeconds())
-		_, _ = timers.AddTaskByFunc("ClearDB", "@daily", func() {
-			var clearDBs []scheduleds.ClearDB
-			if s.onClearInit != nil {
-				clearDBs = s.onClearInit()
-			}
-			err := scheduleds.ClearTable(clearDBs)
-			if err != nil {
-				fmt.Println("timer error:", err)
-			}
-		}, "每天定时清理数据库内容", option...)
-		if s.onScheInit != nil {
-			s.onScheInit(timers, option)
+	if err := s.startScheduled(); err != nil {
+		zap.L().Error("initialize scheduled tasks", zap.Error(err))
+	}
+}
+
+func (s *SysInit) startScheduled() error {
+	if s.timers != nil {
+		return nil
+	}
+	s.timers = scheduleds.NewTimerTask()
+	options := []cron.Option{cron.WithSeconds(), cron.WithChain(cron.Recover(cron.DefaultLogger), cron.SkipIfStillRunning(cron.DefaultLogger))}
+	_, err := s.timers.AddTaskByFunc("ClearDB", "@daily", func() {
+		var tables []scheduleds.ClearDB
+		if s.onClearInit != nil {
+			tables = s.onClearInit()
 		}
-	}()
+		if err := scheduleds.ClearTable(tables); err != nil {
+			zap.L().Error("clear database", zap.Error(err))
+		}
+	}, "每天定时清理数据库内容", options...)
+	if err != nil {
+		return err
+	}
+	if s.onScheInit != nil {
+		s.onScheInit(s.timers, options)
+	}
+	return nil
+}
+
+// Close releases application-owned resources after HTTP requests have drained.
+// It is safe to call repeatedly, including after partial initialization failure.
+func (s *SysInit) Close() error {
+	s.closeOnce.Do(func() {
+		if s.cancel != nil {
+			s.cancel()
+		}
+		if s.watcherStop != nil {
+			s.watcherStop()
+		}
+		if s.timers != nil {
+			if timer, ok := s.timers.(interface{ CloseContext(context.Context) error }); ok {
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				s.closeErr = errors.Join(s.closeErr, timer.CloseContext(ctx))
+				cancel()
+			} else {
+				s.timers.Close()
+			}
+		}
+		if s.cacheStop != nil {
+			s.cacheStop()
+			s.closeErr = errors.Join(s.closeErr, utils.SaveRtLogging())
+		}
+		if s.auditStop != nil {
+			s.auditStop()
+		}
+		if s.onShutInit != nil {
+			s.onShutInit()
+		}
+		ip2geo.CloseIpGeoLocation()
+		if s.redis != nil {
+			s.closeErr = errors.Join(s.closeErr, s.redis.Close())
+		}
+		if s.db != nil {
+			pool, err := s.db.DB()
+			if err == nil {
+				err = pool.Close()
+			}
+			s.closeErr = errors.Join(s.closeErr, err)
+		}
+		if s.loggerClose != nil {
+			s.closeErr = errors.Join(s.closeErr, s.loggerClose())
+		}
+	})
+	if s.closeErr != nil {
+		return fmt.Errorf("close system resources: %w", s.closeErr)
+	}
+	return nil
 }

@@ -1,6 +1,7 @@
 package apis
 
 import (
+	"errors"
 	"github.com/gin-gonic/gin"
 	"github.com/wfu-work/nav-common-go-lib/domains"
 	"github.com/wfu-work/nav-common-go-lib/global"
@@ -14,6 +15,9 @@ type UserApi struct{}
 
 func accessReply(c *gin.Context, v any, err error) {
 	if err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			err = errors.New("账号或企业标识已存在")
+		}
 		response.FailWithMessage(err.Error(), c)
 		return
 	}
@@ -42,14 +46,42 @@ func (UserApi) GetByGuid(c *gin.Context) {
 	response.Ok(u, c)
 }
 func populateUserRoles(u *domains.SysUser) {
-	var roles []domains.SysRole
-	global.NAV_DB.Model(&domains.SysRole{}).Joins("JOIN sys_user_role ur ON ur.role_guid=sys_role.guid").Where("ur.user_guid = ? AND sys_role.company_guid = ?", u.Guid, u.CompanyGuid).Find(&roles)
-	u.RoleGuidList = []string{}
-	u.RoleCodeList = []string{}
-	for _, r := range roles {
-		u.RoleGuidList = append(u.RoleGuidList, r.Guid)
-		u.RoleCodeList = append(u.RoleCodeList, r.Code)
+	users := []domains.SysUser{*u}
+	if populateUsersRoles(global.NAV_DB, users) == nil {
+		*u = users[0]
 	}
+}
+
+func populateUsersRoles(db *gorm.DB, users []domains.SysUser) error {
+	guids := make([]string, 0, len(users))
+	byGuid := make(map[string]*domains.SysUser, len(users))
+	for i := range users {
+		user := &users[i]
+		user.RoleGuidList, user.RoleCodeList = []string{}, []string{}
+		guids = append(guids, user.Guid)
+		byGuid[user.Guid] = user
+	}
+	if len(guids) == 0 {
+		return nil
+	}
+	var assigned []struct {
+		domains.SysRole
+		AssignedUserGuid string
+	}
+	err := db.Model(&domains.SysRole{}).Select("sys_role.*, ur.user_guid AS assigned_user_guid").
+		Joins("JOIN sys_user_role ur ON ur.role_guid = sys_role.guid").
+		Joins("JOIN sys_user u ON u.guid = ur.user_guid AND u.company_guid = sys_role.company_guid AND u.deleted_time IS NULL").
+		Where("ur.user_guid IN ?", guids).Scan(&assigned).Error
+	if err != nil {
+		return err
+	}
+	for _, item := range assigned {
+		if user := byGuid[item.AssignedUserGuid]; user != nil {
+			user.RoleGuidList = append(user.RoleGuidList, item.Guid)
+			user.RoleCodeList = append(user.RoleCodeList, item.Code)
+		}
+	}
+	return nil
 }
 func (UserApi) List(c *gin.Context) {
 	var q domains.PageInfo
@@ -71,8 +103,11 @@ func (UserApi) List(c *gin.Context) {
 		accessReply(c, nil, err)
 		return
 	}
+	if err := populateUsersRoles(global.NAV_DB.WithContext(c.Request.Context()), users); err != nil {
+		accessReply(c, nil, err)
+		return
+	}
 	for i := range users {
-		populateUserRoles(&users[i])
 		users[i].IsPlatformAdmin = users[i].PlatformAdmin()
 	}
 	response.Ok(domains.PageResult{Data: users, Total: n, Page: q.Page, Size: q.Size}, c)

@@ -23,15 +23,16 @@ func NewMysqlInitHandler() *MysqlInitHandler {
 func (h MysqlInitHandler) WriteConfig(ctx context.Context) error {
 	global.Lock.Lock()
 	defer global.Lock.Unlock()
+	next := global.Config().Clone()
 
 	c, ok := ctx.Value("config").(configs.Mysql)
 	if !ok {
 		return errors.New("mysql config invalid")
 	}
-	global.NAV_CONFIG.System.DbType = "mysql"
-	global.NAV_CONFIG.Mysql = c
-	global.NAV_CONFIG.JWT.SigningKey = uuid.New().String()
-	cs := utils.StructToMap(global.NAV_CONFIG)
+	next.System.DbType = "mysql"
+	next.Mysql = c
+	next.JWT.SigningKey = uuid.New().String()
+	cs := utils.StructToMap(next)
 	global.NAV_ACTIVE_DBNAME = &c.Dbname
 	return configs.WriteConfigValues(global.NAV_VIPER, cs)
 }
@@ -64,7 +65,7 @@ func (h MysqlInitHandler) EnsureDB(ctx context.Context, conf *InitDB) (next cont
 	}), Gorm.Config(c.GeneralDB)); err != nil {
 		return ctx, err
 	}
-	//global.NAV_CONFIG.AutoCode.Root, _ = filepath.Abs("..")
+	//global.Config().AutoCode.Root, _ = filepath.Abs("..")
 	next = context.WithValue(next, "db", db)
 	return next, err
 }

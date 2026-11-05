@@ -1,22 +1,23 @@
 package domains
 
 import (
+	"gorm.io/gorm"
 	"strings"
 )
 
 type SysUser struct {
 	BaseDataEntity
 	AuthVersion     uint            `json:"authVersion" gorm:"default:1"`
-	CompanyGuid     string          `json:"companyGuid" gorm:"size:50;comment:企业guid"`
-	Username        string          `json:"username" gorm:"index;size:50;comment:用户名"`
+	CompanyGuid     string          `json:"companyGuid" gorm:"size:50;index:idx_user_company_state,priority:1;comment:企业guid"`
+	Username        string          `json:"username" gorm:"uniqueIndex:idx_sys_user_username;size:50;comment:用户名"`
 	Password        string          `json:"-"  gorm:"comment:用户密码"`
 	Salt            string          `json:"-"  gorm:"comment:盐"`
 	NickName        string          `json:"nickName" gorm:"size:50;comment:用户昵称"`
 	Avatar          string          `json:"avatar" gorm:"comment:用户头像"`
 	Phone           string          `json:"phone"  gorm:"comment:手机号"`
-	Email           string          `json:"email"  gorm:"comment:邮箱"`
+	Email           string          `json:"email"  gorm:"size:254;index;comment:邮箱"`
 	Gender          int             `json:"gender" gorm:"default:0;comment:性别（0.未知，1.男，2.女）"`
-	Enable          int             `json:"enable" gorm:"default:1;comment:用户是否被冻结 1正常 0冻结"`
+	Enable          int             `json:"enable" gorm:"default:1;index:idx_user_company_state,priority:2;comment:用户是否被冻结 1正常 0冻结"`
 	RoleList        []SysRole       `json:"-" gorm:"-"`
 	RoleGuidList    []string        `json:"roleGuidList" gorm:"-"`
 	RoleCodeList    []string        `json:"roleCodeList" gorm:"-"`
@@ -81,4 +82,11 @@ func joinField[T any](items []T, get func(T) string, sep string) string {
 		out = append(out, get(item))
 	}
 	return strings.Join(out, sep)
+}
+
+// BeforeSave keeps login identifiers canonical so indexed equality lookups work.
+func (s *SysUser) BeforeSave(_ *gorm.DB) error {
+	s.Username = strings.ToLower(strings.TrimSpace(s.Username))
+	s.Email = strings.ToLower(strings.TrimSpace(s.Email))
+	return nil
 }

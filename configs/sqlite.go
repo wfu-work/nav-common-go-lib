@@ -12,7 +12,14 @@ type Sqlite struct {
 }
 
 func (s *Sqlite) Dsn() string {
-	return filepath.Join(s.Path, s.Dbname+".db")
+	if s.Dbname == ":memory:" || strings.HasPrefix(s.Dbname, "file:") {
+		return s.Dbname
+	}
+	name := s.Dbname
+	if !strings.HasSuffix(strings.ToLower(name), ".db") {
+		name += ".db"
+	}
+	return filepath.Join(s.Path, name)
 }
 
 type GeneralDB struct {

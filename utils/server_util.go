@@ -103,8 +103,8 @@ func InitRAM() (r Ram, err error) {
 // @description: 硬盘信息
 // @return: d Disk, err error
 func InitDisk() (d []Disk, err error) {
-	for i := range global.NAV_CONFIG.DiskList {
-		mp := global.NAV_CONFIG.DiskList[i].MountPoint
+	for i := range global.Config().DiskList {
+		mp := global.Config().DiskList[i].MountPoint
 		if u, err := disk.Usage(mp); err != nil {
 			return d, err
 		} else {

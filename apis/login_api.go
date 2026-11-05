@@ -30,8 +30,8 @@ var store = base64Captcha.DefaultMemStore
 // @Success 200 {object} response.Response{data=vos.TokenVo,msg=string}  "验证码信息"
 // @Router /login/captcha [get]
 func (a LoginApi) Captcha(c *gin.Context) {
-	openCaptcha := global.NAV_CONFIG.Captcha.OpenCaptcha
-	openCaptchaTimeOut := global.NAV_CONFIG.Captcha.OpenCaptchaTimeOut
+	openCaptcha := global.RequestConfig(c).Captcha.OpenCaptcha
+	openCaptchaTimeOut := global.RequestConfig(c).Captcha.OpenCaptchaTimeOut
 	key := c.ClientIP()
 	v, ok := global.LOCAL_CACHE.Get(key)
 	if !ok {
@@ -43,7 +43,7 @@ func (a LoginApi) Captcha(c *gin.Context) {
 	}
 	// 字符,公式,验证码配置
 	// 生成默认数字的driver
-	driver := base64Captcha.NewDriverDigit(global.NAV_CONFIG.Captcha.ImgHeight, global.NAV_CONFIG.Captcha.ImgWidth, global.NAV_CONFIG.Captcha.KeyLong, 0.7, 80)
+	driver := base64Captcha.NewDriverDigit(global.RequestConfig(c).Captcha.ImgHeight, global.RequestConfig(c).Captcha.ImgWidth, global.RequestConfig(c).Captcha.KeyLong, 0.7, 80)
 	cp := base64Captcha.NewCaptcha(driver, store)
 	id, b64s, _, err := cp.Generate()
 	if err != nil {
@@ -54,7 +54,7 @@ func (a LoginApi) Captcha(c *gin.Context) {
 	response.Ok(vos.SysCaptcha{
 		CaptchaId:     id,
 		CaptchaImg:    b64s,
-		CaptchaLength: global.NAV_CONFIG.Captcha.KeyLong,
+		CaptchaLength: global.RequestConfig(c).Captcha.KeyLong,
 		OpenCaptcha:   oc,
 	}, c)
 }

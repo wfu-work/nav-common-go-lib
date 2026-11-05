@@ -2,7 +2,6 @@ package dbs
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/wfu-work/nav-common-go-lib/configs"
 	"github.com/wfu-work/nav-common-go-lib/global"
@@ -22,40 +21,40 @@ type InitDB struct {
 }
 
 func GetInitDB() InitDB {
-	switch global.NAV_CONFIG.System.DbType {
+	switch global.Config().System.DbType {
 	case "sqlite":
 		return InitDB{
-			DBType: global.NAV_CONFIG.System.DbType,
-			DBName: utils.StringOrDefault(global.NAV_CONFIG.Sqlite.Dbname, "nav-app"),
-			DBPath: utils.StringOrDefault(global.NAV_CONFIG.Sqlite.Path, "./data/"),
+			DBType: global.Config().System.DbType,
+			DBName: utils.StringOrDefault(global.Config().Sqlite.Dbname, "nav-app"),
+			DBPath: utils.StringOrDefault(global.Config().Sqlite.Path, "./data/"),
 		}
 	case "mysql":
 		return InitDB{
-			DBType:   global.NAV_CONFIG.System.DbType,
-			DBName:   utils.StringOrDefault(global.NAV_CONFIG.Mysql.Dbname, "nav-app"),
-			DBPath:   utils.StringOrDefault(global.NAV_CONFIG.Mysql.Path, "./data/"),
-			Host:     utils.StringOrDefault(global.NAV_CONFIG.Mysql.Host, utils.StringOrDefault(global.NAV_CONFIG.Mysql.Path, "127.0.0.1")),
-			Port:     utils.StringOrDefault(global.NAV_CONFIG.Mysql.Port, "3306"),
-			UserName: utils.StringOrDefault(global.NAV_CONFIG.Mysql.Username, "root"),
-			Password: utils.StringOrDefault(global.NAV_CONFIG.Mysql.Password, "root"),
+			DBType:   global.Config().System.DbType,
+			DBName:   utils.StringOrDefault(global.Config().Mysql.Dbname, "nav-app"),
+			DBPath:   utils.StringOrDefault(global.Config().Mysql.Path, "./data/"),
+			Host:     utils.StringOrDefault(global.Config().Mysql.Host, utils.StringOrDefault(global.Config().Mysql.Path, "127.0.0.1")),
+			Port:     utils.StringOrDefault(global.Config().Mysql.Port, "3306"),
+			UserName: utils.StringOrDefault(global.Config().Mysql.Username, "root"),
+			Password: utils.StringOrDefault(global.Config().Mysql.Password, "root"),
 		}
 	default:
 		return InitDB{
-			DBType:   global.NAV_CONFIG.System.DbType,
-			DBName:   utils.StringOrDefault(global.NAV_CONFIG.Pgsql.Dbname, "nav-app"),
-			DBPath:   utils.StringOrDefault(global.NAV_CONFIG.Pgsql.Path, "./data/"),
-			Host:     utils.StringOrDefault(global.NAV_CONFIG.Pgsql.Host, utils.StringOrDefault(global.NAV_CONFIG.Pgsql.Path, "127.0.0.1")),
-			Port:     utils.StringOrDefault(global.NAV_CONFIG.Pgsql.Port, "5432"),
-			UserName: utils.StringOrDefault(global.NAV_CONFIG.Pgsql.Username, "postgres"),
-			Password: utils.StringOrDefault(global.NAV_CONFIG.Pgsql.Password, "postgres"),
+			DBType:   global.Config().System.DbType,
+			DBName:   utils.StringOrDefault(global.Config().Pgsql.Dbname, "nav-app"),
+			DBPath:   utils.StringOrDefault(global.Config().Pgsql.Path, "./data/"),
+			Host:     utils.StringOrDefault(global.Config().Pgsql.Host, utils.StringOrDefault(global.Config().Pgsql.Path, "127.0.0.1")),
+			Port:     utils.StringOrDefault(global.Config().Pgsql.Port, "5432"),
+			UserName: utils.StringOrDefault(global.Config().Pgsql.Username, "postgres"),
+			Password: utils.StringOrDefault(global.Config().Pgsql.Password, "postgres"),
 		}
 	}
 }
 
 // SqliteEmptyDsn sqlite 空数据库 建库链接
 func (i *InitDB) SqliteEmptyDsn() string {
-	separator := string(os.PathSeparator)
-	return i.DBPath + separator + i.DBName + ".db"
+	config := i.ToSqliteConfig()
+	return config.Dsn()
 }
 
 // MysqlEmptyDsn msyql 空数据库 建库链接
@@ -89,8 +88,8 @@ func (i *InitDB) ToSqliteConfig() configs.Sqlite {
 			Dbname:       i.DBName,
 			Username:     i.UserName,
 			Password:     i.Password,
-			MaxIdleConns: 10,
-			MaxOpenConns: 100,
+			MaxIdleConns: 1,
+			MaxOpenConns: 1,
 			LogMode:      "error",
 			Config:       "",
 		},

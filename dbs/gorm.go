@@ -20,18 +20,19 @@ var Gorm = new(_gorm)
 type _gorm struct{}
 
 func InitGorm() (*gorm.DB, error) {
-	switch global.NAV_CONFIG.System.DbType {
+	config := global.Config()
+	switch config.System.DbType {
 	case "mysql":
-		global.NAV_ACTIVE_DBNAME = &global.NAV_CONFIG.Mysql.Dbname
+		global.NAV_ACTIVE_DBNAME = &config.Mysql.Dbname
 		return GormMysql()
 	case "sqlite":
-		global.NAV_ACTIVE_DBNAME = &global.NAV_CONFIG.Sqlite.Dbname
+		global.NAV_ACTIVE_DBNAME = &config.Sqlite.Dbname
 		return GormSqlite()
 	case "pgsql":
-		global.NAV_ACTIVE_DBNAME = &global.NAV_CONFIG.Pgsql.Dbname
+		global.NAV_ACTIVE_DBNAME = &config.Pgsql.Dbname
 		return GormPgSql()
 	default:
-		global.NAV_ACTIVE_DBNAME = &global.NAV_CONFIG.Mysql.Dbname
+		global.NAV_ACTIVE_DBNAME = &config.Mysql.Dbname
 		return GormMysql()
 	}
 }
@@ -74,11 +75,12 @@ func (g *_gorm) Config(general configs.GeneralDB) *gorm.Config {
 			SingularTable: general.Singular,
 		},
 		DisableForeignKeyConstraintWhenMigrating: true,
+		TranslateError:                           true,
 	}
 }
 
 func (g *_gorm) ConfigSqlite(prefix string, singular bool) *gorm.Config {
-	var general = global.NAV_CONFIG.Sqlite.GeneralDB
+	var general = global.Config().Sqlite.GeneralDB
 	return &gorm.Config{
 		Logger: logger.New(NewWriter(general), logger.Config{
 			SlowThreshold:             200 * time.Millisecond,
@@ -95,6 +97,7 @@ func (g *_gorm) ConfigSqlite(prefix string, singular bool) *gorm.Config {
 			return time.Now().In(loc)
 		},
 		DisableForeignKeyConstraintWhenMigrating: true,
+		TranslateError:                           true,
 	}
 }
 
@@ -108,7 +111,10 @@ func NewWriter(config configs.GeneralDB) *Writer {
 }
 
 func (c *Writer) Printf(message string, data ...any) {
-	fmt.Printf(message, data...)
+	if !c.config.LogZap || global.NAV_LOG == nil {
+		fmt.Printf(message, data...)
+		return
+	}
 	if c.config.LogZap {
 		switch c.config.LogLevel() {
 		case logger.Silent:

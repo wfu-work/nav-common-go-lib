@@ -5,12 +5,10 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/glebarez/sqlite"
 	"github.com/google/uuid"
 	"github.com/wfu-work/nav-common-go-lib/configs"
 	"github.com/wfu-work/nav-common-go-lib/global"
 	"github.com/wfu-work/nav-common-go-lib/utils"
-	"gorm.io/gorm"
 )
 
 type SqliteInitHandler struct{}
@@ -23,15 +21,16 @@ func NewSqliteInitHandler() *SqliteInitHandler {
 func (h SqliteInitHandler) WriteConfig(ctx context.Context) error {
 	global.Lock.Lock()
 	defer global.Lock.Unlock()
+	next := global.Config().Clone()
 
 	c, ok := ctx.Value("config").(configs.Sqlite)
 	if !ok {
 		return errors.New("sqlite config invalid")
 	}
-	global.NAV_CONFIG.System.DbType = "sqlite"
-	global.NAV_CONFIG.Sqlite = c
-	global.NAV_CONFIG.JWT.SigningKey = uuid.New().String()
-	cs := utils.StructToMap(global.NAV_CONFIG)
+	next.System.DbType = "sqlite"
+	next.Sqlite = c
+	next.JWT.SigningKey = uuid.New().String()
+	cs := utils.StructToMap(next)
 	global.NAV_ACTIVE_DBNAME = &c.Dbname
 	return configs.WriteConfigValues(global.NAV_VIPER, cs)
 }
@@ -48,13 +47,11 @@ func (h SqliteInitHandler) EnsureDB(ctx context.Context, conf *InitDB) (next con
 		return ctx, nil
 	}
 
-	dsn := conf.SqliteEmptyDsn()
-
-	var db *gorm.DB
-	if db, err = gorm.Open(sqlite.Open(dsn), Gorm.Config(c.GeneralDB)); err != nil {
+	db, err := initSqliteDatabase(c)
+	if err != nil {
 		return ctx, err
 	}
-	//global.NAV_CONFIG.AutoCode.Root, _ = filepath.Abs("..")
+
 	next = context.WithValue(next, "db", db)
 	return next, err
 }

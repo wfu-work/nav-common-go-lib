@@ -1,7 +1,11 @@
 package inits
 
 import (
+	"context"
+	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
 	"log"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/robfig/cron/v3"
@@ -9,6 +13,19 @@ import (
 )
 
 type SysInit struct {
+	auditStop   func()
+	watcherStop func()
+	background  context.Context
+	cancel      context.CancelFunc
+	cacheStop   func()
+	loggerClose func() error
+	timers      scheduleds.Timer
+	db          *gorm.DB
+	redis       redis.UniversalClient
+	closeOnce   sync.Once
+	closeErr    error
+	initialized bool
+
 	onWebInit    OnWebFunc
 	onScheInit   OnScheFunc
 	onOtherInit  OnOtherFunc
@@ -44,6 +61,8 @@ func (s *SysInit) OnTableInit(f OnTableFunc) {
 	s.onTableInit = f
 }
 
+func (s *SysInit) OnCacheInit(f OnCacheFunc) { s.onCacheInit = f }
+
 func (s *SysInit) OnOtherInit(f OnOtherFunc) {
 	s.onOtherInit = f
 }
@@ -62,11 +81,11 @@ func (s *SysInit) Init() {
 	}
 }
 
-func (s *SysInit) InitE() error {
-	// 初始化系统
-	if err := s.InitializeSystem(); err != nil {
+func (s *SysInit) InitE() error { return s.InitContext(context.Background()) }
+
+func (s *SysInit) InitContext(ctx context.Context) error {
+	if err := s.initializeSystem(ctx); err != nil {
 		return err
 	}
-	// 运行服务器
 	return s.RunServer()
 }

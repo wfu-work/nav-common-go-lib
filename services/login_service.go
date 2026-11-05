@@ -2,6 +2,7 @@ package services
 
 import (
 	"errors"
+	"gorm.io/gorm"
 
 	"github.com/wfu-work/nav-common-go-lib/global"
 	"github.com/wfu-work/nav-common-go-lib/utils"
@@ -9,12 +10,24 @@ import (
 	"go.uber.org/zap"
 )
 
-type LoginService struct{}
+type LoginService struct{ db *gorm.DB }
+
+func (s *LoginService) WithDB(db *gorm.DB) *LoginService {
+	cloned := *s
+	cloned.db = db
+	return &cloned
+}
+func (s *LoginService) DB() *gorm.DB {
+	if s.db != nil {
+		return s.db
+	}
+	return global.NAV_DB
+}
 
 var LoginServiceApp = new(LoginService)
 
 func (s *LoginService) LoginIn(v *vos.LoginVo) (*vos.TokenVo, error) {
-	user, err := UserServiceApp.GetByLoginAccount(v.Username)
+	user, err := UserServiceApp.WithDB(s.DB()).GetByLoginAccount(v.Username)
 	if err != nil {
 		return nil, errors.New("数据库错误")
 	}
@@ -28,7 +41,7 @@ func (s *LoginService) LoginIn(v *vos.LoginVo) (*vos.TokenVo, error) {
 	if ok := utils.BcryptCheck(password, user.Password); !ok {
 		return nil, errors.New("密码错误")
 	}
-	a, err := LoadAccess(global.NAV_DB, user.Guid)
+	a, err := LoadAccess(s.DB(), user.Guid)
 	if err != nil {
 		return nil, err
 	}

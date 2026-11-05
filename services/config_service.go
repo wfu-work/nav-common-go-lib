@@ -18,7 +18,7 @@ func (s ConfigService) SaveConfigToFile() error {
 	if err != nil {
 		return err
 	}
-	return v.WriteConfigAs(configFile)
+	return configs.SaveConfigFile(v, configFile)
 }
 
 func (s ConfigService) SaveConfigValue(key string, value any) error {

@@ -1,4 +1,8 @@
 system:
+  trusted-proxies: []
+  max-request-bytes: 16777216
+  max-upload-bytes: 33554432
+  enable-swagger: false
   addr: 8888
   db-type: ""
   iplimit-count: 15000
@@ -17,7 +21,12 @@ captcha:
   open-captcha-timeout: 3600
 disk-list:
   - mount-point: /
+cors:
+  mode: whitelist
+  whitelist: []
 jwt:
+  cookie-secure: false
+  cookie-same-site: lax
   buffer-time: 1d
   expires-time: 7d
   issuer: nav-app
@@ -34,8 +43,8 @@ sqlite:
   engine: ""
   log-mode: error
   log-zap: false
-  max-idle-conns: 10
-  max-open-conns: 100
+  max-idle-conns: 1
+  max-open-conns: 1
   password: ""
   port: ""
   prefix: ""

@@ -3,9 +3,9 @@ package middlewares
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -15,149 +15,142 @@ import (
 	"github.com/wfu-work/nav-common-go-lib/services"
 	"github.com/wfu-work/nav-common-go-lib/utils"
 	"github.com/wfu-work/nav-common-go-lib/utils/ip2geo"
-	"github.com/wfu-work/nav-common-go-lib/vos"
-	"go.uber.org/zap"
 )
+
+const auditBodyLimit = 32 << 10
+
+type replayBody struct {
+	io.Reader
+	io.Closer
+}
+
+// auditParams reads only a bounded prefix and replays it to the real handler.
+// Binary, oversized and invalid JSON bodies are never copied into audit storage.
+func auditParams(c *gin.Context) (string, map[string]any, error) {
+	if c.Request.Method == http.MethodGet {
+		params := make(map[string]any)
+		for key, values := range c.Request.URL.Query() {
+			params[key] = values
+		}
+		redact(params)
+		data, _ := json.Marshal(params)
+		if len(data) > auditBodyLimit {
+			return "[query omitted: size limit]", nil, nil
+		}
+		return string(data), params, nil
+	}
+	contentType := strings.Split(c.GetHeader("Content-Type"), ";")[0]
+	if contentType != "application/json" && !strings.HasSuffix(contentType, "+json") {
+		return "[body omitted]", nil, nil
+	}
+	if c.Request.Body == nil {
+		return "", nil, nil
+	}
+	original := c.Request.Body
+	data, err := io.ReadAll(io.LimitReader(original, auditBodyLimit+1))
+	c.Request.Body = replayBody{Reader: io.MultiReader(bytes.NewReader(data), original), Closer: original}
+	if err != nil {
+		return "", nil, err
+	}
+	if len(data) > auditBodyLimit {
+		return "[body omitted: size limit]", nil, nil
+	}
+	var value any
+	if json.Unmarshal(data, &value) != nil {
+		return "[invalid JSON omitted]", nil, nil
+	}
+	redact(value)
+	encoded, _ := json.Marshal(value)
+	params, _ := value.(map[string]any)
+	return string(encoded), params, nil
+}
+
+func redact(value any) {
+	switch object := value.(type) {
+	case map[string]any:
+		for key, child := range object {
+			name := strings.ToLower(strings.NewReplacer("_", "", "-", "").Replace(key))
+			if strings.Contains(name, "password") || strings.Contains(name, "token") || strings.Contains(name, "secret") || strings.Contains(name, "apikey") || name == "authorization" || name == "signingkey" {
+				object[key] = "[REDACTED]"
+			} else {
+				redact(child)
+			}
+		}
+	case []any:
+		for _, child := range object {
+			redact(child)
+		}
+	}
+}
+
+func readAuditParams(c *gin.Context) (string, map[string]any, bool) {
+	body, params, err := auditParams(c)
+	if err == nil {
+		return body, params, true
+	}
+	var sizeErr *http.MaxBytesError
+	if errors.As(err, &sizeErr) {
+		c.AbortWithStatus(http.StatusRequestEntityTooLarge)
+	} else {
+		c.AbortWithStatus(http.StatusBadRequest)
+	}
+	return "", nil, false
+}
 
 func ApiLogger() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
-		var body []byte
-		if c.Request.Method != http.MethodGet {
-			var err error
-			body, err = io.ReadAll(c.Request.Body)
-			if err != nil {
-				global.NAV_LOG.Error("read body from request error:", zap.Error(err))
-			} else {
-				c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
-			}
-		} else {
-			query := c.Request.URL.RawQuery
-			query, _ = url.QueryUnescape(query)
-			split := strings.Split(query, "&")
-			paramsMap := make(map[string]string)
-			for _, v := range split {
-				kv := strings.Split(v, "=")
-				if len(kv) == 2 {
-					paramsMap[kv[0]] = kv[1]
-				}
-			}
-			body, _ = json.Marshal(&paramsMap)
+		body, params, ok := readAuditParams(c)
+		if !ok {
+			return
 		}
-		bodyStr := string(body)
-
-		userGuid := utils.GetUserGuid(c)
-		username := utils.GetUserName(c)
-		companyGuid := utils.GetCompanyGuid(c)
-		targetCompany := c.Query("companyGuid")
-		if targetCompany == "" {
-			var payload struct {
-				CompanyGuid string `json:"companyGuid"`
-			}
-			if json.Unmarshal(body, &payload) == nil {
-				targetCompany = payload.CompanyGuid
-			}
+		config := global.RequestConfig(c)
+		userGuid, username, company := utils.GetUserGuid(c), utils.GetUserName(c), utils.GetCompanyGuid(c)
+		target := c.Query("companyGuid")
+		if target == "" && params != nil {
+			target, _ = params["companyGuid"].(string)
 		}
-		if targetCompany == "" {
-			targetCompany = companyGuid
+		if target == "" {
+			target = company
 		}
-
-		path := c.Request.URL.Path
-		path = strings.TrimPrefix(path, global.NAV_CONFIG.System.RouterPrefix)
-		method := c.Request.Method
-		ip := c.ClientIP()
-		userAgent := c.Request.UserAgent()
-		var errorsStr string
-		for _, err := range c.Errors.Errors() {
-			errorsStr += err + "; "
-		}
-
 		c.Next()
-
-		if target := c.GetString("targetCompanyGuid"); target != "" {
-			targetCompany = target
+		if explicit := c.GetString("targetCompanyGuid"); explicit != "" {
+			target = explicit
 		}
-		domestic, provinces, glo, _ := ip2geo.GetIpLocation(ip)
-		offTime := time.Since(start).Milliseconds()
-		sysLog := domains.SysLog{
-			CompanyGuid:       companyGuid,
-			TargetCompanyGuid: targetCompany,
-			Username:          username,
-			UserGuid:          userGuid,
-			Operation:         path,
-			Method:            method,
-			Params:            bodyStr,
-			IP:                ip,
-			Address:           glo + "|" + provinces + "|" + domestic,
-			UserAgent:         userAgent,
-			Exception:         errorsStr,
-			Time:              offTime,
-		}
-		err := services.LoggerServiceApp.Create(sysLog)
-		if err != nil {
-			global.NAV_LOG.Error("error logger record: ", zap.Error(err))
-		}
+		domestic, province, country, _ := ip2geo.GetIpLocation(c.ClientIP())
+		recordAudit(auditEvent{operation: &domains.SysLog{
+			CompanyGuid: company, TargetCompanyGuid: target, UserGuid: userGuid, Username: username,
+			Operation: strings.TrimPrefix(c.Request.URL.Path, config.System.RouterPrefix), Method: c.Request.Method,
+			Params: body, IP: c.ClientIP(), Address: country + "|" + province + "|" + domestic, UserAgent: c.Request.UserAgent(),
+			Exception: strings.Join(c.Errors.Errors(), "; "), Time: time.Since(start).Milliseconds(),
+		}})
 	}
 }
 
 func LoginLogger() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		ip := c.ClientIP()
-		userAgent := c.Request.UserAgent()
-		var errorsStr string
-		for _, err := range c.Errors.Errors() {
-			errorsStr += err + "; "
+		_, params, ok := readAuditParams(c)
+		if !ok {
+			return
 		}
-		path := c.Request.URL.Path
-		path = strings.TrimPrefix(path, global.NAV_CONFIG.System.RouterPrefix)
-		loginType := 0
-		userGuid := ""
-		username := ""
-		if path != "/login/in" {
-			loginType = 1
-			userGuid = utils.GetUserGuid(c)
-			username = utils.GetUserName(c)
+		config := global.RequestConfig(c)
+		path := strings.TrimPrefix(c.Request.URL.Path, config.System.RouterPrefix)
+		username, guid, kind := "", "", 0
+		if path == "/login/in" {
+			username, _ = params["username"].(string)
 		} else {
-			body, err := io.ReadAll(c.Request.Body)
-			if err != nil {
-				global.NAV_LOG.Error("read body from request error:", zap.Error(err))
-			} else {
-				c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
-			}
-			var loginVo vos.LoginVo
-			err = json.Unmarshal(body, &loginVo)
-			if err != nil {
-				global.NAV_LOG.Error("read body from request error:", zap.Error(err))
-			}
-			username = loginVo.Username
-			if username != "" {
-				user, err := services.UserServiceApp.GetByLoginAccount(username)
-				if user == nil {
-					global.NAV_LOG.Error("get user by login account error:", zap.Error(err))
-					c.Next()
-					return
-				}
-				userGuid = user.Guid
-			}
+			username, guid, kind = utils.GetUserName(c), utils.GetUserGuid(c), 1
 		}
-
 		c.Next()
-
-		domestic, provinces, glo, _ := ip2geo.GetIpLocation(ip)
-		loginLog := domains.LoginLog{
-			Username:  username,
-			UserGuid:  userGuid,
-			Ip:        ip,
-			UserAgent: userAgent,
-			Device:    utils.GetDeviceType(c),
-			Address:   glo + "|" + provinces + "|" + domestic,
-			LoginTime: time.Now().UnixMilli(),
-			Platform:  "web",
-			Type:      loginType,
+		if guid == "" && username != "" {
+			if user, err := services.UserServiceApp.GetByLoginAccount(username); err == nil && user != nil {
+				guid = user.Guid
+			}
 		}
-		err := services.LoginLogServiceApp.Create(loginLog)
-		if err != nil {
-			global.NAV_LOG.Error("error login logger record: ", zap.Error(err))
-		}
+		domestic, province, country, _ := ip2geo.GetIpLocation(c.ClientIP())
+		recordAudit(auditEvent{login: &domains.LoginLog{
+			Username: username, UserGuid: guid, Ip: c.ClientIP(), UserAgent: c.Request.UserAgent(), Device: utils.GetDeviceType(c),
+			Address: country + "|" + province + "|" + domestic, LoginTime: time.Now().UnixMilli(), Platform: "web", Type: kind,
+		}})
 	}
 }

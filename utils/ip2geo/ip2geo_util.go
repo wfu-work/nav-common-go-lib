@@ -2,7 +2,6 @@ package ip2geo
 
 import (
 	"bytes"
-	"context"
 	"embed"
 	"fmt"
 	"io/fs"
@@ -11,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"github.com/lionsoul2014/ip2region/binding/golang/service"
 
@@ -26,18 +24,18 @@ var ipV6DataFile embed.FS
 
 var (
 	ipSearcher *service.Ip2Region
-	once       sync.Once
+	searcherMu sync.RWMutex
 )
 
 // ExtractIPRegionDB 从嵌入的文件系统中提取 IP2Region 数据库
 func ExtractIPRegionDB() (string, string, error) {
-	if _, err := os.Stat(global.NAV_CONFIG.Local.Ip2geoPath); os.IsNotExist(err) {
-		if err := os.MkdirAll(global.NAV_CONFIG.Local.Ip2geoPath, 0755); err != nil {
+	if _, err := os.Stat(global.Config().Local.Ip2geoPath); os.IsNotExist(err) {
+		if err := os.MkdirAll(global.Config().Local.Ip2geoPath, 0755); err != nil {
 			return "", "", err
 		}
 	}
-	dbv4Path := filepath.Join(global.NAV_CONFIG.Local.Ip2geoPath, "ip2region_v4.xdb")
-	dbv6Path := filepath.Join(global.NAV_CONFIG.Local.Ip2geoPath, "ip2region_v6.xdb")
+	dbv4Path := filepath.Join(global.Config().Local.Ip2geoPath, "ip2region_v4.xdb")
+	dbv6Path := filepath.Join(global.Config().Local.Ip2geoPath, "ip2region_v6.xdb")
 	if _, err := os.Stat(dbv4Path); err == nil {
 		if _, err := os.Stat(dbv6Path); err == nil {
 			log.Println("IP2Region 数据库已存在，跳过提取")
@@ -80,18 +78,23 @@ func InitIpGeoLocation() error {
 	if err != nil {
 		return fmt.Errorf("failed to create ip2region service: %s", err)
 	}
+	searcherMu.Lock()
+	if ipSearcher != nil {
+		ipSearcher.Close()
+	}
 	ipSearcher = ip2region
+	searcherMu.Unlock()
 	log.Println("ip2region 初始化成功")
 	return nil
 }
 
 // CloseIpGeoLocation 关闭 IP 地理位置查询
 func CloseIpGeoLocation() {
+	searcherMu.Lock()
+	defer searcherMu.Unlock()
 	if ipSearcher != nil {
-		once.Do(func() {
-			ipSearcher.Close()
-			ipSearcher = nil
-		})
+		ipSearcher.Close()
+		ipSearcher = nil
 	}
 }
 
@@ -112,35 +115,16 @@ func GetIpLocation(ip string) (string, string, string, error) {
 
 // 查询 IP 地理位置
 func queryIpLocation(ip string) (string, string, string, error) {
+	searcherMu.RLock()
+	defer searcherMu.RUnlock()
 	if ipSearcher == nil {
 		return "未知", "未知", "未知", fmt.Errorf("ip2region 未初始化")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 800*time.Millisecond)
-	defer cancel()
-	resultCh := make(chan struct {
-		region string
-		err    error
-	}, 1)
-
-	go func() {
-		var region string
-		var err error
-		region, err = ipSearcher.Search(ip)
-		resultCh <- struct {
-			region string
-			err    error
-		}{region, err}
-	}()
-
-	select {
-	case <-ctx.Done():
-		return "未知", "未知", "未知", fmt.Errorf("IP 查询超时")
-	case result := <-resultCh:
-		if result.err != nil {
-			return "未知", "未知", "未知", result.err
-		}
-		return parseIpRegion(result.region)
+	region, err := ipSearcher.Search(ip)
+	if err != nil {
+		return "未知", "未知", "未知", err
 	}
+	return parseIpRegion(region)
 }
 
 // 解析 ip2region 返回的地区信息

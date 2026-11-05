@@ -40,11 +40,11 @@ func (s *UserService) GetByLoginAccount(account string) (*domains.SysUser, error
 	}
 	normalized := strings.ToLower(account)
 
-	user, err := s.getFirstUserByCondition("LOWER(username) = ?", normalized)
+	user, err := s.getFirstUserByCondition("username = ?", normalized)
 	if err != nil || user != nil {
 		return user, err
 	}
-	return s.getFirstUserByCondition("LOWER(email) = ?", normalized)
+	return s.getFirstUserByCondition("email = ?", normalized)
 }
 
 func (s *UserService) getFirstUserByCondition(query any, args ...any) (*domains.SysUser, error) {
@@ -77,7 +77,10 @@ func (s *UserService) UpdatePassword(userGuid string, passwordVo *vos.PasswordVo
 	if len(newPassword) < 8 {
 		return false, errors.New("密码至少8位")
 	}
-	newPasswordHash := utils.BcryptHash(newPassword)
+	newPasswordHash, err := utils.BcryptHashE(newPassword)
+	if err != nil {
+		return false, err
+	}
 	err = s.Update(*user, "password", newPasswordHash)
 	if err != nil {
 		return false, err

@@ -1,10 +1,13 @@
 package utils
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/patrickmn/go-cache"
@@ -12,68 +15,106 @@ import (
 	"github.com/wfu-work/nav-common-go-lib/vos"
 )
 
-func InitCache() {
-	c := cache.New(5*time.Minute, 10*time.Minute)
+var cacheFileMu sync.Mutex
+var rtLoggingMu sync.Mutex
+
+func InitCache() { InitCacheContext(context.Background()) }
+
+// InitCacheContext returns an idempotent stop function that drains persistence.
+func InitCacheContext(parent context.Context) func() {
+	ctx, cancel := context.WithCancel(parent)
+	c := cache.New(5*time.Minute, 0)
 	global.LOCAL_CACHE = c
-
-	load()
-
+	path := global.Config().Local.CachePath
+	loadCache(c, path)
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		ticker := time.NewTicker(10 * time.Minute)
 		defer ticker.Stop()
-		for range ticker.C {
-			PersistCache()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				c.DeleteExpired()
+				if err := saveItems[*vos.RtLoggingVo](c, path, "rtlogging_"); err != nil {
+					fmt.Printf("persist cache: %v\n", err)
+				}
+			}
 		}
 	}()
+	return func() { cancel(); <-done }
 }
 
-func load() {
-	data, err := os.ReadFile(global.NAV_CONFIG.Local.CachePath)
+func loadCache(c *cache.Cache, path string) {
+	data, err := os.ReadFile(path)
 	if err != nil {
-		fmt.Printf("❌初始化缓存读取文件异常：%+v\n", err)
 		return
 	}
 	var items map[string]json.RawMessage
-	if err := json.Unmarshal(data, &items); err != nil {
+	if json.Unmarshal(data, &items) != nil {
 		return
 	}
-	for k, v := range items {
-		if strings.HasPrefix(k, "rtlogging_") {
-			var rt vos.RtLoggingVo
-			objBytes, _ := json.Marshal(v)
-			if err := json.Unmarshal(objBytes, &rt); err == nil {
-				global.LOCAL_CACHE.Set(k, &rt, cache.NoExpiration)
+	for key, raw := range items {
+		if strings.HasPrefix(key, "rtlogging_") {
+			var value vos.RtLoggingVo
+			if json.Unmarshal(raw, &value) == nil {
+				c.Set(key, &value, cache.NoExpiration)
 			}
-		} else {
-			global.LOCAL_CACHE.Set(k, v, cache.NoExpiration)
 		}
 	}
 }
 
 func SaveItems[T any](prefix string) error {
-	items := make(map[string]T)
-	for k, v := range global.LOCAL_CACHE.Items() {
-		if prefix == "" || (len(k) >= len(prefix) && k[:len(prefix)] == prefix) {
-			if obj, ok := v.Object.(T); ok {
-				items[k] = obj
-			}
-		}
-	}
-	if len(items) == 0 {
+	return saveItems[T](global.LOCAL_CACHE, global.Config().Local.CachePath, prefix)
+}
+
+func saveItems[T any](c *cache.Cache, path, prefix string) error {
+	if c == nil || path == "" {
 		return nil
 	}
-	existing := make(map[string]interface{})
-	if data, err := os.ReadFile(global.NAV_CONFIG.Local.CachePath); err == nil {
+	cacheFileMu.Lock()
+	defer cacheFileMu.Unlock()
+	existing := make(map[string]any)
+	if data, err := os.ReadFile(path); err == nil {
 		_ = json.Unmarshal(data, &existing)
 	}
-	for k, v := range items {
-		existing[k] = v
+	for key := range existing {
+		if strings.HasPrefix(key, prefix) {
+			delete(existing, key)
+		}
+	}
+	for key, value := range c.Items() {
+		if strings.HasPrefix(key, prefix) {
+			if object, ok := value.Object.(T); ok {
+				existing[key] = object
+			}
+		}
 	}
 	data, err := json.MarshalIndent(existing, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(global.NAV_CONFIG.Local.CachePath, data, 0644)
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	file, err := os.CreateTemp(filepath.Dir(path), ".nav-cache-*")
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	defer os.Remove(file.Name())
+	if _, err := file.Write(data); err != nil {
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	return os.Rename(file.Name(), path)
 }
 
 func SaveRtLogging() error {
@@ -99,6 +140,8 @@ func Get[T any](key string) (T, bool) {
 }
 
 func SetRtlogging(sncode string, size int64) {
+	rtLoggingMu.Lock()
+	defer rtLoggingMu.Unlock()
 	v, _ := global.LOCAL_CACHE.Get("rtlogging_" + sncode)
 	if v != nil {
 		if rtVo, ok := v.(*vos.RtLoggingVo); ok {

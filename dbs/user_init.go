@@ -2,8 +2,9 @@ package dbs
 
 import (
 	"context"
+	"errors"
 
-	"github.com/pkg/errors"
+	"fmt"
 	"github.com/wfu-work/nav-common-go-lib/domains"
 	"github.com/wfu-work/nav-common-go-lib/utils"
 	"gorm.io/gorm"
@@ -55,12 +56,15 @@ func (i *initUser) InitializeData(ctx context.Context) (context.Context, error) 
 	if !ok {
 		return ctx, ErrMissingDBContext
 	}
-	adminPassword := utils.BcryptHash("navfirst.com")
+	adminPassword, err := utils.BcryptHashE("navfirst.com")
+	if err != nil {
+		return ctx, err
+	}
 	entities := []domains.SysUser{
 		{BaseDataEntity: domains.BaseDataEntity{Guid: "9a9ed1e6a5a334461b263e5a80207cc7"}, Username: "admin", Password: adminPassword, Phone: "15207129575", Email: "support@shoumtech.com", Enable: 1},
 	}
 	if err := db.Create(&entities).Error; err != nil {
-		return ctx, errors.Wrapf(err, "%s表数据初始化失败!", domains.SysUser{}.TableName())
+		return ctx, fmt.Errorf("%s表数据初始化失败: %w", domains.SysUser{}.TableName(), err)
 	}
 	next := context.WithValue(ctx, i.InitializerName(), entities)
 	return next, nil

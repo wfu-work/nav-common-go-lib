@@ -1,6 +1,8 @@
 package scheduleds
 
 import (
+	"context"
+	"errors"
 	"sync"
 
 	"github.com/robfig/cron/v3"
@@ -48,6 +50,7 @@ type taskManager struct {
 
 // timer 定时任务管理
 type timer struct {
+	closed   bool
 	cronList map[string]*taskManager
 	sync.Mutex
 }
@@ -60,6 +63,9 @@ func NewTimerTask() Timer {
 func (t *timer) AddTaskByFunc(cronName string, spec string, fun func(), taskName string, option ...cron.Option) (cron.EntryID, error) {
 	t.Lock()
 	defer t.Unlock()
+	if t.closed {
+		return 0, errors.New("timer is closed")
+	}
 	if _, ok := t.cronList[cronName]; !ok {
 		tasks := make(map[cron.EntryID]*task)
 		t.cronList[cronName] = &taskManager{
@@ -68,6 +74,9 @@ func (t *timer) AddTaskByFunc(cronName string, spec string, fun func(), taskName
 		}
 	}
 	id, err := t.cronList[cronName].corn.AddFunc(spec, fun)
+	if err != nil {
+		return id, err
+	}
 	t.cronList[cronName].corn.Start()
 	t.cronList[cronName].tasks[id] = &task{
 		EntryID:  id,
@@ -81,6 +90,9 @@ func (t *timer) AddTaskByFunc(cronName string, spec string, fun func(), taskName
 func (t *timer) AddTaskByFuncWithSecond(cronName string, spec string, fun func(), taskName string, option ...cron.Option) (cron.EntryID, error) {
 	t.Lock()
 	defer t.Unlock()
+	if t.closed {
+		return 0, errors.New("timer is closed")
+	}
 	option = append(option, cron.WithSeconds())
 	if _, ok := t.cronList[cronName]; !ok {
 		tasks := make(map[cron.EntryID]*task)
@@ -90,6 +102,9 @@ func (t *timer) AddTaskByFuncWithSecond(cronName string, spec string, fun func()
 		}
 	}
 	id, err := t.cronList[cronName].corn.AddFunc(spec, fun)
+	if err != nil {
+		return id, err
+	}
 	t.cronList[cronName].corn.Start()
 	t.cronList[cronName].tasks[id] = &task{
 		EntryID:  id,
@@ -103,6 +118,9 @@ func (t *timer) AddTaskByFuncWithSecond(cronName string, spec string, fun func()
 func (t *timer) AddTaskByJob(cronName string, spec string, job interface{ Run() }, taskName string, option ...cron.Option) (cron.EntryID, error) {
 	t.Lock()
 	defer t.Unlock()
+	if t.closed {
+		return 0, errors.New("timer is closed")
+	}
 	if _, ok := t.cronList[cronName]; !ok {
 		tasks := make(map[cron.EntryID]*task)
 		t.cronList[cronName] = &taskManager{
@@ -111,6 +129,9 @@ func (t *timer) AddTaskByJob(cronName string, spec string, job interface{ Run() 
 		}
 	}
 	id, err := t.cronList[cronName].corn.AddJob(spec, job)
+	if err != nil {
+		return id, err
+	}
 	t.cronList[cronName].corn.Start()
 	t.cronList[cronName].tasks[id] = &task{
 		EntryID:  id,
@@ -124,6 +145,9 @@ func (t *timer) AddTaskByJob(cronName string, spec string, job interface{ Run() 
 func (t *timer) AddTaskByJobWithSeconds(cronName string, spec string, job interface{ Run() }, taskName string, option ...cron.Option) (cron.EntryID, error) {
 	t.Lock()
 	defer t.Unlock()
+	if t.closed {
+		return 0, errors.New("timer is closed")
+	}
 	option = append(option, cron.WithSeconds())
 	if _, ok := t.cronList[cronName]; !ok {
 		tasks := make(map[cron.EntryID]*task)
@@ -133,6 +157,9 @@ func (t *timer) AddTaskByJobWithSeconds(cronName string, spec string, job interf
 		}
 	}
 	id, err := t.cronList[cronName].corn.AddJob(spec, job)
+	if err != nil {
+		return id, err
+	}
 	t.cronList[cronName].corn.Start()
 	t.cronList[cronName].tasks[id] = &task{
 		EntryID:  id,
@@ -146,7 +173,7 @@ func (t *timer) AddTaskByJobWithSeconds(cronName string, spec string, job interf
 func (t *timer) StartCron(cronName string) {
 	t.Lock()
 	defer t.Unlock()
-	if v, ok := t.cronList[cronName]; ok {
+	if v, ok := t.cronList[cronName]; ok && !t.closed {
 		v.corn.Start()
 	}
 }
@@ -180,12 +207,25 @@ func (t *timer) RemoveTaskByName(cronName string, taskName string) {
 }
 
 // Close 释放资源
-func (t *timer) Close() {
+func (t *timer) Close() { _ = t.CloseContext(context.Background()) }
+
+// CloseContext stops scheduling and waits for already running jobs.
+func (t *timer) CloseContext(ctx context.Context) error {
 	t.Lock()
-	defer t.Unlock()
-	for _, v := range t.cronList {
-		v.corn.Stop()
+	t.closed = true
+	waits := make([]context.Context, 0, len(t.cronList))
+	for _, manager := range t.cronList {
+		waits = append(waits, manager.corn.Stop())
 	}
+	t.Unlock()
+	for _, wait := range waits {
+		select {
+		case <-wait.Done():
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
 }
 
 // Clear 清除任务
@@ -202,7 +242,17 @@ func (t *timer) Clear(cronName string) {
 func (t *timer) FindCronList() map[string]*taskManager {
 	t.Lock()
 	defer t.Unlock()
-	return t.cronList
+	result := make(map[string]*taskManager, len(t.cronList))
+	for key, manager := range t.cronList {
+		copy := *manager
+		copy.tasks = make(map[cron.EntryID]*task, len(manager.tasks))
+		for id, value := range manager.tasks {
+			entry := *value
+			copy.tasks[id] = &entry
+		}
+		result[key] = &copy
+	}
+	return result
 }
 
 // FindCron 获取对应cronName的cron 可能会为空
@@ -210,7 +260,16 @@ func (t *timer) FindCron(cronName string) (*taskManager, bool) {
 	t.Lock()
 	defer t.Unlock()
 	v, ok := t.cronList[cronName]
-	return v, ok
+	if !ok {
+		return nil, false
+	}
+	copy := *v
+	copy.tasks = make(map[cron.EntryID]*task, len(v.tasks))
+	for id, value := range v.tasks {
+		entry := *value
+		copy.tasks[id] = &entry
+	}
+	return &copy, true
 }
 
 // FindTask 获取对应cronName的cron 可能会为空
@@ -223,7 +282,8 @@ func (t *timer) FindTask(cronName string, taskName string) (*task, bool) {
 	}
 	for _, t2 := range v.tasks {
 		if t2.TaskName == taskName {
-			return t2, true
+			copy := *t2
+			return &copy, true
 		}
 	}
 	return nil, false

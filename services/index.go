@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 	"strings"
 	"sync"
 
@@ -175,13 +174,15 @@ func (s *CrudService[T]) List(pageInfo domains.PageInfo, likeFields string) (lis
 			err = resolveErr
 			return
 		}
+		search := db.Session(&gorm.Session{NewDB: true})
 		for index, field := range likeFieldSlice {
 			if index == 0 {
-				db = db.Where(field+" like ?", "%"+pageInfo.Content+"%")
+				search = search.Where(field+" like ?", "%"+pageInfo.Content+"%")
 			} else {
-				db = db.Or(field+" like ?", "%"+pageInfo.Content+"%")
+				search = search.Or(field+" like ?", "%"+pageInfo.Content+"%")
 			}
 		}
+		db = db.Where(search)
 	}
 	db = db.Model(new(T))
 	err = db.Count(&total).Error
@@ -269,13 +270,14 @@ func (s *CrudService[T]) schemaMeta() (*crudSchemaMeta, error) {
 	if db == nil {
 		return nil, errors.New("database is not initialized")
 	}
-	schemaType := reflect.TypeOf((*T)(nil)).Elem()
-	if cached, ok := crudSchemaCache.Load(schemaType); ok {
-		return cached.(*crudSchemaMeta), nil
-	}
 	stmt := &gorm.Statement{DB: db}
 	if err := stmt.Parse(new(T)); err != nil {
 		return nil, err
+	}
+	// Gorm shares schemas across request sessions but keeps independent database
+	// naming strategies separate. Config pointers are cloned by WithContext.
+	if cached, ok := crudSchemaCache.Load(stmt.Schema); ok {
+		return cached.(*crudSchemaMeta), nil
 	}
 	columns := make(map[string]string, len(stmt.Schema.FieldsByDBName)*3)
 	immutable := map[string]struct{}{
@@ -308,7 +310,7 @@ func (s *CrudService[T]) schemaMeta() (*crudSchemaMeta, error) {
 		columns:        columns,
 		mutableColumns: mutableColumns,
 	}
-	actual, _ := crudSchemaCache.LoadOrStore(schemaType, meta)
+	actual, _ := crudSchemaCache.LoadOrStore(stmt.Schema, meta)
 	return actual.(*crudSchemaMeta), nil
 }
 
@@ -361,4 +363,20 @@ func WithTx(ctx context.Context, fn func(tx *gorm.DB) error) error {
 		ctx = context.Background()
 	}
 	return db.WithContext(ctx).Transaction(fn)
+}
+
+// NewServiceGroup binds database-backed services to one application or transaction.
+// The global service instances remain available for existing hosts.
+func NewServiceGroup(db *gorm.DB) *SysServiceGroup {
+	return &SysServiceGroup{
+		UserService:       *UserServiceApp.WithDB(db),
+		RoleService:       *RoleServiceApp.WithDB(db),
+		CompanyService:    *new(CompanyService).WithDB(db),
+		LoggerService:     *LoggerServiceApp.WithDB(db),
+		LoginLogService:   *LoginLogServiceApp.WithDB(db),
+		UserRoleService:   *UserRoleServiceApp.WithDB(db),
+		PermissionService: *PermissionServiceApp.WithDB(db),
+		RegisterService:   *RegisterServiceApp.WithDB(db),
+		LoginService:      *LoginServiceApp.WithDB(db),
+	}
 }

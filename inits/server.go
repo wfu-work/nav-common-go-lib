@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -14,13 +13,9 @@ import (
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
-	"github.com/swaggo/swag/example/basic/docs"
 	"github.com/wfu-work/nav-common-go-lib/global"
 	"github.com/wfu-work/nav-common-go-lib/middlewares"
 	"github.com/wfu-work/nav-common-go-lib/routers"
-	"github.com/wfu-work/nav-common-go-lib/utils"
-	"github.com/wfu-work/nav-common-go-lib/utils/ip2geo"
-	"go.uber.org/zap"
 )
 
 type Server interface {
@@ -28,12 +23,13 @@ type Server interface {
 	Shutdown(context.Context) error
 }
 
-func (s *SysInit) RunServer() error {
+func (s *SysInit) RunServer() (err error) {
+	defer func() { err = errors.Join(err, s.Close()) }()
 	Router := s.Routers()
 
-	address := fmt.Sprintf(":%d", global.NAV_CONFIG.System.Addr)
-	routerPrefix := global.NAV_CONFIG.System.RouterPrefix
-	appName := global.NAV_CONFIG.System.AppName
+	address := fmt.Sprintf(":%d", global.Config().System.Addr)
+	routerPrefix := global.Config().System.RouterPrefix
+	appName := global.Config().System.AppName
 
 	fmt.Printf(`
 	欢迎使用 %s
@@ -54,85 +50,84 @@ func (s *SysInit) RunServer() error {
 // initServer 启动服务并实现优雅关闭
 func (s *SysInit) initServer(address string, router *gin.Engine, readTimeout, writeTimeout time.Duration) error {
 	srv := &http.Server{
-		Addr:           address,
-		Handler:        router,
-		ReadTimeout:    readTimeout,
-		WriteTimeout:   writeTimeout,
-		MaxHeaderBytes: 1 << 20,
+		Addr:              address,
+		Handler:           router,
+		ReadTimeout:       readTimeout,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		WriteTimeout:      writeTimeout,
+		MaxHeaderBytes:    1 << 20,
 	}
+	parent := s.background
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, stop := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	return runServer(ctx, srv)
+}
+
+func runServer(ctx context.Context, srv Server) error {
 	errCh := make(chan error, 1)
-
-	// 在goroutine中启动服务
-	go func() {
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errCh <- err
-		}
-	}()
-
-	// 等待中断信号以优雅地关闭服务器
-	quit := make(chan os.Signal, 1)
-	// kill (无参数) 默认发送 syscall.SIGTERM
-	// kill -2 发送 syscall.SIGINT
-	// kill -9 发送 syscall.SIGKILL，但是无法被捕获，所以不需要添加
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	go func() { errCh <- srv.ListenAndServe() }()
 	select {
 	case err := <-errCh:
-		zap.L().Error("server启动失败", zap.Error(err))
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
 		return err
-	case <-quit:
+	case <-ctx.Done():
 	}
-	log.Println("关闭WEB服务...")
-
-	utils.PersistCache()
-	ip2geo.CloseIpGeoLocation()
-
-	if s.onShutInit != nil {
-		s.onShutInit()
-	}
-
-	// 设置5秒的超时时间
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	drain, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil {
+	if err := srv.Shutdown(drain); err != nil {
+		if closer, ok := srv.(interface{ Close() error }); ok {
+			_ = closer.Close()
+		}
 		return err
 	}
-	log.Println("WEB服务已关闭")
-	return nil
+	err := <-errCh
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
+	return err
 }
 
 // Routers 初始化总路由
 func (s *SysInit) Routers() *gin.Engine {
 	Router := gin.New()
-	Router.Use(gin.Recovery())
+	Router.Use(gin.Recovery(), middlewares.RequestLimits())
+	if err := Router.SetTrustedProxies(global.Config().System.TrustedProxies); err != nil {
+		panic(err)
+	}
 	if gin.Mode() == gin.DebugMode {
 		Router.Use(gin.Logger())
 	}
 
 	systemRouter := routers.SysRouterGroupApp
 
-	//Router.StaticFS(global.NAV_CONFIG.Local.StorePath, justFilesFilesystem{http.Dir(global.NAV_CONFIG.Local.StorePath)}) // Router.Use(middleware.LoadTls())  // 如果需要使用https 请打开此中间件 然后前往 core/server.go 将启动模式 更变为 Router.RunTLS("端口","你的cre/pem文件","你的key文件")
-
 	if s.onWebInit != nil {
 		s.onWebInit(Router)
 	}
 
-	Router.Use(middlewares.Cors())
+	Router.Use(middlewares.CorsByRules())
 	log.Println("use middleware cors")
 
-	docs.SwaggerInfo.BasePath = global.NAV_CONFIG.System.RouterPrefix
-	Router.GET(global.NAV_CONFIG.System.RouterPrefix+"/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
-	log.Println("register swagger handler")
+	if global.Config().System.EnableSwagger {
+		// Hosts register their own generated docs, usually with a blank import.
+		Router.GET(global.Config().System.RouterPrefix+"/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	}
 
-	PublicGroup := Router.Group(global.NAV_CONFIG.System.RouterPrefix)
+	PublicGroup := Router.Group(global.Config().System.RouterPrefix)
 	{
 		PublicGroup.GET("/health", func(c *gin.Context) {
 			c.JSON(http.StatusOK, "ok")
 		})
-		PublicGroup.GET(global.NAV_CONFIG.Local.ProxyOssPath+"/*filepath", middlewares.JWTAuth(), middlewares.CasbinHandler(), gin.WrapH(
-			http.StripPrefix(global.NAV_CONFIG.System.RouterPrefix+global.NAV_CONFIG.Local.ProxyOssPath+"/", http.FileServer(http.Dir(global.NAV_CONFIG.Local.OssPath))),
+		PublicGroup.GET(global.Config().Local.ProxyOssPath+"/*filepath", middlewares.JWTAuth(), middlewares.CasbinHandler(), gin.WrapH(
+			http.StripPrefix(global.Config().System.RouterPrefix+global.Config().Local.ProxyOssPath+"/", http.FileServer(http.Dir(global.Config().Local.OssPath))),
 		))
 	}
-	PrivateGroup := Router.Group(global.NAV_CONFIG.System.RouterPrefix)
+	PrivateGroup := Router.Group(global.Config().System.RouterPrefix)
 	PrivateGroup.Use(middlewares.JWTAuth()).Use(middlewares.CasbinHandler())
 	{
 		systemRouter.InitCompanyRouter(PrivateGroup)            // 注册企业相关路由

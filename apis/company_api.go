@@ -90,7 +90,11 @@ func (CompanyApi) Save(c *gin.Context) {
 			if err != nil || len(plain) < 8 {
 				return errors.New("初始密码至少8位")
 			}
-			u := domains.SysUser{BaseDataEntity: domains.BaseDataEntity{Guid: uuid.NewString()}, CompanyGuid: company.Guid, Username: username, Password: utils.BcryptHash(plain), Enable: 1, AuthVersion: 1}
+			hash, err := utils.BcryptHashE(plain)
+			if err != nil {
+				return err
+			}
+			u := domains.SysUser{BaseDataEntity: domains.BaseDataEntity{Guid: uuid.NewString()}, CompanyGuid: company.Guid, Username: username, Password: hash, Enable: 1, AuthVersion: 1}
 			if err := tx.Create(&u).Error; err != nil {
 				return err
 			}

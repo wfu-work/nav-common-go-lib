@@ -2,145 +2,130 @@ package utils
 
 import (
 	"archive/zip"
+	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-// Unzip 将 zip 文件解压到目标目录
-func Unzip(src, dest string) error {
-	r, err := zip.OpenReader(src)
-	if err != nil {
-		return err
-	}
-	defer r.Close()
-
-	for _, f := range r.File {
-		path := filepath.Join(dest, f.Name)
-		// 如果是目录，则创建
-		if f.FileInfo().IsDir() {
-			_ = os.MkdirAll(path, os.ModePerm)
-			continue
-		}
-		// 确保父目录存在
-		if err := os.MkdirAll(filepath.Dir(path), os.ModePerm); err != nil {
-			return err
-		}
-		rc, err := f.Open()
-		if err != nil {
-			return err
-		}
-		defer rc.Close()
-
-		// 创建目标文件
-		ofile, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.ModePerm)
-		if err != nil {
-			return err
-		}
-		defer ofile.Close()
-
-		// 写入文件内容
-		if _, err := io.Copy(ofile, rc); err != nil {
-			return err
-		}
-	}
-	return nil
+// UnzipOptions bounds the work and disk space consumed by an archive.
+type UnzipOptions struct {
+	MaxFiles int
+	MaxBytes int64
+	Flatten  bool
 }
 
-func UnzipFlatten(src, dest string) error {
-	r, err := zip.OpenReader(src)
+func Unzip(src, dest string) error        { return ExtractZip(src, dest, UnzipOptions{}) }
+func UnzipFlatten(src, dest string) error { return ExtractZip(src, dest, UnzipOptions{Flatten: true}) }
+func UnzipWithCustomName(src, dest string) error {
+	base := filepath.Base(src)
+	name := strings.TrimSuffix(base, filepath.Ext(base))
+	if !filepath.IsLocal(name) {
+		return errors.New("invalid archive name")
+	}
+	return Unzip(src, filepath.Join(dest, name))
+}
+
+// ExtractZip rejects traversal, links, special files and oversized archives.
+// os.Root also prevents traversal through symlinks already present on disk.
+func ExtractZip(src, dest string, options UnzipOptions) error {
+	if options.MaxFiles <= 0 {
+		options.MaxFiles = 10000
+	}
+	if options.MaxBytes <= 0 {
+		options.MaxBytes = 1 << 30
+	}
+	archive, err := zip.OpenReader(src)
 	if err != nil {
 		return err
 	}
-	defer r.Close()
-
-	for _, f := range r.File {
-		name := f.Name
-		if name == "__MACOSX/" ||
-			strings.HasPrefix(name, "__MACOSX/") ||
-			strings.HasSuffix(name, ".DS_Store") {
-			continue
+	defer archive.Close()
+	if len(archive.File) > options.MaxFiles {
+		return errors.New("too many zip entries")
+	}
+	if err := os.MkdirAll(dest, 0755); err != nil {
+		return err
+	}
+	root, err := os.OpenRoot(dest)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	remaining := options.MaxBytes
+	for _, file := range archive.File {
+		name := strings.TrimSuffix(file.Name, "/")
+		if strings.Contains(name, "\\") || !filepath.IsLocal(filepath.FromSlash(name)) {
+			return fmt.Errorf("illegal zip path: %q", file.Name)
 		}
-		parts := strings.Split(name, "/")
-		if len(parts) <= 1 {
-			continue
+		if file.Mode()&os.ModeSymlink != 0 || (!file.FileInfo().IsDir() && !file.Mode().IsRegular()) {
+			return fmt.Errorf("unsupported zip entry: %q", file.Name)
 		}
-		relPath := filepath.Join(parts[1:]...)
-		targetPath := filepath.Join(dest, relPath)
-		if !strings.HasPrefix(filepath.Clean(targetPath), filepath.Clean(dest)) {
-			return fmt.Errorf("illegal file path: %s", targetPath)
+		if options.Flatten {
+			if strings.HasPrefix(name, "__MACOSX/") || name == "__MACOSX" || strings.HasSuffix(name, ".DS_Store") {
+				continue
+			}
+			_, rest, found := strings.Cut(name, "/")
+			if !found || rest == "" {
+				continue
+			}
+			name = rest
+			if !filepath.IsLocal(filepath.FromSlash(name)) {
+				return fmt.Errorf("illegal zip path: %q", file.Name)
+			}
 		}
-		if f.FileInfo().IsDir() {
-			if err := os.MkdirAll(targetPath, os.ModePerm); err != nil {
+		name = filepath.FromSlash(name)
+		if file.FileInfo().IsDir() {
+			if err := root.MkdirAll(name, 0755); err != nil {
 				return err
 			}
 			continue
 		}
-		if err := os.MkdirAll(filepath.Dir(targetPath), os.ModePerm); err != nil {
-			return err
+		if file.UncompressedSize64 > uint64(remaining) {
+			return errors.New("zip exceeds uncompressed size limit")
 		}
-		rc, err := f.Open()
+		n, err := extractZipFile(root, name, file, remaining)
 		if err != nil {
 			return err
 		}
-		ofile, err := os.OpenFile(targetPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, f.Mode())
-		if err != nil {
-			_ = rc.Close()
-			return err
-		}
-		_, err = io.Copy(ofile, rc)
-		_ = rc.Close()
-		_ = ofile.Close()
-		if err != nil {
-			return err
-		}
+		remaining -= n
 	}
 	return nil
 }
 
-func UnzipWithCustomName(src, dest string) error {
-	r, err := zip.OpenReader(src)
+func extractZipFile(root *os.Root, name string, entry *zip.File, remaining int64) (int64, error) {
+	if err := root.MkdirAll(filepath.Dir(name), 0755); err != nil {
+		return 0, err
+	}
+	reader, err := entry.Open()
 	if err != nil {
-		return err
+		return 0, err
 	}
-	defer r.Close()
-
-	// 获取不带扩展名的文件名作为目标目录名
-	baseName := filepath.Base(src)
-	dirName := baseName[:len(baseName)-len(filepath.Ext(baseName))]
-	destDir := filepath.Join(dest, dirName)
-	if err := os.MkdirAll(destDir, 0755); err != nil {
-		return err
+	defer reader.Close()
+	temp := name + ".part-" + GenerateGuid()
+	file, err := root.OpenFile(temp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+	if err != nil {
+		return 0, err
 	}
-
-	for _, f := range r.File {
-		path := filepath.Join(destDir, f.Name)
-		if f.FileInfo().IsDir() {
-			_ = os.MkdirAll(path, f.Mode())
-			continue
-		}
-		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-			return err
-		}
-		rc, err := f.Open()
-		if err != nil {
-			return err
-		}
-		defer rc.Close()
-
-		ofile, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
-		if err != nil {
-			return err
-		}
-		defer ofile.Close()
-
-		if _, err := io.Copy(ofile, rc); err != nil {
-			return err
-		}
+	defer root.Remove(temp)
+	copyLimit := remaining
+	if copyLimit < math.MaxInt64 {
+		copyLimit++
 	}
-	return nil
+	n, copyErr := io.Copy(file, io.LimitReader(reader, copyLimit))
+	closeErr := file.Close()
+	if copyErr != nil {
+		return n, copyErr
+	}
+	if closeErr != nil {
+		return n, closeErr
+	}
+	if n > remaining {
+		return n, errors.New("zip exceeds uncompressed size limit")
+	}
+	return n, root.Rename(temp, name)
 }
 
 // ToZip 压缩文件夹到 Zip 文件

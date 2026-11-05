@@ -24,7 +24,7 @@ func (dBService *DBService) InitDataBase(conf dbs.InitDB) (err error) {
 	ctx := context.TODO()
 	ctx = context.WithValue(ctx, "adminPassword", conf.AdminPassword)
 	if len(dbs.Initializers) == 0 {
-		return errors.New("无可用初始化过程，请检查初始化是否已执行完成")
+		return nil
 	}
 	sort.Sort(&dbs.Initializers) // 保证有依赖的 initializer 排在后面执行
 	// Note: 若 initializer 只有单一依赖，可以写为 B=A+1, C=A+1; 由于 BC 之间没有依赖关系，所以谁先谁后并不影响初始化
@@ -45,13 +45,21 @@ func (dBService *DBService) InitDataBase(conf dbs.InitDB) (err error) {
 		initHandler = dbs.NewMysqlInitHandler()
 		ctx = context.WithValue(ctx, "dbtype", "mysql")
 	}
-	ctx, err = initHandler.EnsureDB(ctx, &conf)
-	if err != nil {
-		return err
+	db := global.NAV_DB
+	if db == nil {
+		ctx, err = initHandler.EnsureDB(ctx, &conf)
+		if err != nil {
+			return err
+		}
+		var ok bool
+		db, ok = ctx.Value("db").(*gorm.DB)
+		if !ok || db == nil {
+			return ErrMissingDBContext
+		}
+		global.NAV_DB = db
+	} else {
+		ctx = context.WithValue(ctx, "db", db)
 	}
-
-	db := ctx.Value("db").(*gorm.DB)
-	global.NAV_DB = db
 
 	if err = initHandler.InitTables(ctx, dbs.Initializers); err != nil {
 		return err
@@ -60,10 +68,5 @@ func (dBService *DBService) InitDataBase(conf dbs.InitDB) (err error) {
 		return err
 	}
 
-	//if err = initHandler.WriteConfig(ctx); err != nil {
-	//	return err
-	//}
-	dbs.Initializers = dbs.InitSlice{}
-	dbs.Cache = map[string]*dbs.OrderedInitializer{}
 	return nil
 }

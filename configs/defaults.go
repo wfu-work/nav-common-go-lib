@@ -2,6 +2,8 @@ package configs
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/spf13/viper"
@@ -65,5 +67,39 @@ func WriteConfigValues(source *viper.Viper, values map[string]any) error {
 	for key, value := range values {
 		v.Set(key, value)
 	}
-	return v.WriteConfigAs(configFile)
+	var next Server
+	if err := v.Unmarshal(&next); err != nil {
+		return err
+	}
+	if err := next.Validate(); err != nil {
+		return err
+	}
+	return SaveConfigFile(v, configFile)
+}
+
+// SaveConfigFile replaces the file atomically so watchers never see partial YAML.
+func SaveConfigFile(v *viper.Viper, path string) error {
+	file, err := os.CreateTemp(filepath.Dir(path), ".nav-config-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(file.Name())
+	defer file.Close()
+	mode := os.FileMode(0600)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode().Perm()
+	}
+	if err := file.Chmod(mode); err != nil {
+		return err
+	}
+	if err := v.WriteConfigTo(file); err != nil {
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	return os.Rename(file.Name(), path)
 }

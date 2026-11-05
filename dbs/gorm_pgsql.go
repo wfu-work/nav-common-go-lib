@@ -9,7 +9,7 @@ import (
 
 // GormPgSql 初始化 Postgresql 数据库
 func GormPgSql() (*gorm.DB, error) {
-	p := global.NAV_CONFIG.Pgsql
+	p := global.Config().Pgsql
 	return initPgSqlDatabase(p)
 }
 
@@ -32,7 +32,10 @@ func initPgSqlDatabase(p configs.Pgsql) (*gorm.DB, error) {
 	if db, err := gorm.Open(postgres.New(pgsqlConfig), Gorm.Config(general)); err != nil {
 		return nil, err
 	} else {
-		sqlDB, _ := db.DB()
+		sqlDB, err := db.DB()
+		if err != nil {
+			return nil, err
+		}
 		sqlDB.SetMaxIdleConns(p.MaxIdleConns)
 		sqlDB.SetMaxOpenConns(p.MaxOpenConns)
 		return db, nil

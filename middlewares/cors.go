@@ -2,68 +2,92 @@ package middlewares
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/wfu-work/nav-common-go-lib/configs"
 	"github.com/wfu-work/nav-common-go-lib/global"
 )
 
-// Cors 直接放行所有跨域请求并放行所有 OPTIONS 方法
-func Cors() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		method := c.Request.Method
-		origin := c.Request.Header.Get("Origin")
-		c.Header("Access-Control-Allow-Origin", origin)
-		c.Header("Access-Control-Allow-Headers", "Content-Type,AccessToken,X-CSRF-Token, Authorization, Token,X-Token,X-User-Id")
-		c.Header("Access-Control-Allow-Methods", "POST, GET, OPTIONS,DELETE,PUT")
-		c.Header("Access-Control-Expose-Headers", "Content-Length, Access-Control-Allow-Origin, Access-Control-Allow-Headers, Content-Type, New-Token, New-Expires-At")
-		c.Header("Access-Control-Allow-Credentials", "true")
+const corsHeaders = "Content-Type,Authorization,Token,X-Token,X-User-Id,X-CSRF-Token"
+const corsMethods = "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+const corsExpose = "Content-Length,New-Token,New-Expires-At"
 
-		// 放行所有OPTIONS方法
-		if method == "OPTIONS" {
+// Cors allows public cross-origin requests without credential sharing.
+func Cors() gin.HandlerFunc        { return corsHandler(true) }
+func CorsByRules() gin.HandlerFunc { return corsHandler(false) }
+
+func corsHandler(allowAll bool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		config := global.RequestConfig(c)
+		origin := c.GetHeader("Origin")
+		c.Writer.Header().Add("Vary", "Origin")
+		if origin == "" {
+			c.Next()
+			return
+		}
+		var rule *configs.CORSWhitelist
+		for _, item := range config.Cors.Whitelist {
+			if item.AllowOrigin == origin {
+				copy := item
+				rule = &copy
+				break
+			}
+		}
+		if rule == nil && (allowAll || config.Cors.Mode == "allow-all" || config.Cors.Mode == "") {
+			rule = &configs.CORSWhitelist{AllowOrigin: "*"}
+		}
+		if rule == nil {
+			if config.Cors.Mode == "strict-whitelist" || c.Request.Method == http.MethodOptions {
+				c.AbortWithStatus(http.StatusForbidden)
+				return
+			}
+			c.Next()
+			return
+		}
+		methods, headers, expose := rule.AllowMethods, rule.AllowHeaders, rule.ExposeHeaders
+		if methods == "" {
+			methods = corsMethods
+		}
+		if headers == "" {
+			headers = corsHeaders
+		}
+		if expose == "" {
+			expose = corsExpose
+		}
+		c.Header("Access-Control-Allow-Origin", rule.AllowOrigin)
+		c.Header("Access-Control-Allow-Methods", methods)
+		c.Header("Access-Control-Allow-Headers", headers)
+		c.Header("Access-Control-Expose-Headers", expose)
+		if rule.AllowCredentials && rule.AllowOrigin != "*" {
+			c.Header("Access-Control-Allow-Credentials", "true")
+		}
+		if c.Request.Method == http.MethodOptions {
+			c.Writer.Header().Add("Vary", "Access-Control-Request-Method")
+			c.Writer.Header().Add("Vary", "Access-Control-Request-Headers")
+			requested := c.GetHeader("Access-Control-Request-Method")
+			if requested != "" && !containsHeaderValue(methods, requested) {
+				c.AbortWithStatus(http.StatusForbidden)
+				return
+			}
+			for _, requested := range strings.Split(c.GetHeader("Access-Control-Request-Headers"), ",") {
+				if requested = strings.TrimSpace(requested); requested != "" && !containsHeaderValue(headers, requested) {
+					c.AbortWithStatus(http.StatusForbidden)
+					return
+				}
+			}
 			c.AbortWithStatus(http.StatusNoContent)
-		}
-		// 处理请求
-		c.Next()
-	}
-}
-
-// CorsByRules 按照配置处理跨域请求
-func CorsByRules() gin.HandlerFunc {
-	if global.NAV_CONFIG.Cors.Mode == "allow-all" {
-		return Cors()
-	}
-	return func(c *gin.Context) {
-		whitelist := checkCors(c.GetHeader("origin"))
-
-		// 通过检查, 添加请求头
-		if whitelist != nil {
-			c.Header("Access-Control-Allow-Origin", whitelist.AllowOrigin)
-			c.Header("Access-Control-Allow-Headers", whitelist.AllowHeaders)
-			c.Header("Access-Control-Allow-Methods", whitelist.AllowMethods)
-			c.Header("Access-Control-Expose-Headers", whitelist.ExposeHeaders)
-			if whitelist.AllowCredentials {
-				c.Header("Access-Control-Allow-Credentials", "true")
-			}
-		}
-
-		// 严格白名单模式且未通过检查，直接拒绝处理请求
-		if whitelist == nil && global.NAV_CONFIG.Cors.Mode == "strict-whitelist" && !(c.Request.Method == "GET" && c.Request.URL.Path == "/health") {
-			c.AbortWithStatus(http.StatusForbidden)
-		} else {
-			if c.Request.Method == http.MethodOptions {
-				c.AbortWithStatus(http.StatusNoContent)
-			}
+			return
 		}
 		c.Next()
 	}
 }
 
-func checkCors(currentOrigin string) *configs.CORSWhitelist {
-	for _, whitelist := range global.NAV_CONFIG.Cors.Whitelist {
-		if currentOrigin == whitelist.AllowOrigin {
-			return &whitelist
+func containsHeaderValue(values, value string) bool {
+	for _, candidate := range strings.Split(values, ",") {
+		if strings.EqualFold(strings.TrimSpace(candidate), value) {
+			return true
 		}
 	}
-	return nil
+	return false
 }

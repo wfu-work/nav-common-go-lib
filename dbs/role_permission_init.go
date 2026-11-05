@@ -2,8 +2,9 @@ package dbs
 
 import (
 	"context"
+	"errors"
 
-	"github.com/pkg/errors"
+	"fmt"
 	"github.com/wfu-work/nav-common-go-lib/domains"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -62,7 +63,7 @@ func (i *initRolePermission) InitializeData(ctx context.Context) (context.Contex
 		},
 	}
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&entities).Error; err != nil {
-		return ctx, errors.Wrapf(err, "%s表数据初始化失败!", domains.SysRolePermission{}.TableName())
+		return ctx, fmt.Errorf("%s表数据初始化失败: %w", domains.SysRolePermission{}.TableName(), err)
 	}
 	next := context.WithValue(ctx, i.InitializerName(), entities)
 	return next, nil

@@ -2,8 +2,7 @@ package utils
 
 import (
 	"errors"
-	"net"
-	"strconv"
+	"net/http"
 	"strings"
 	"time"
 
@@ -31,13 +30,13 @@ var (
 
 func NewJWT() *JWT {
 	return &JWT{
-		[]byte(global.NAV_CONFIG.JWT.SigningKey),
+		[]byte(global.Config().JWT.SigningKey),
 	}
 }
 
 func (j *JWT) CreateClaims(baseClaims configs.BaseClaims) configs.CustomClaims {
-	bf, _ := ParseDuration(global.NAV_CONFIG.JWT.BufferTime)
-	ep, _ := ParseDuration(global.NAV_CONFIG.JWT.ExpiresTime)
+	bf, _ := ParseDuration(global.Config().JWT.BufferTime)
+	ep, _ := ParseDuration(global.Config().JWT.ExpiresTime)
 	claims := configs.CustomClaims{
 		BaseClaims: baseClaims,
 		BufferTime: int64(bf / time.Second), // 缓冲时间1天 缓冲时间内会获得新的token刷新令牌 此时一个用户会存在两个有效令牌 但是前端只留一个 另一个会丢失
@@ -45,7 +44,7 @@ func (j *JWT) CreateClaims(baseClaims configs.BaseClaims) configs.CustomClaims {
 			Audience:  jwt.ClaimStrings{"NAV-IPC-WEB"},           // 受众
 			NotBefore: jwt.NewNumericDate(time.Now().Add(-1000)), // 签名生效时间
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ep)),    // 过期时间 7天  配置文件
-			Issuer:    global.NAV_CONFIG.JWT.Issuer,              // 签名的发行者
+			Issuer:    global.Config().JWT.Issuer,                // 签名的发行者
 		},
 	}
 	return claims
@@ -62,14 +61,17 @@ func (j *JWT) CreateTokenByOldToken(oldToken string, claims configs.CustomClaims
 	v, err, _ := global.NAV_Concurrency_Control.Do("JWT:"+oldToken, func() (interface{}, error) {
 		return j.CreateToken(claims)
 	})
-	return v.(string), err
+	if err != nil {
+		return "", err
+	}
+	return v.(string), nil
 }
 
 // ParseToken 解析 token
 func (j *JWT) ParseToken(tokenString string) (*configs.CustomClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &configs.CustomClaims{}, func(token *jwt.Token) (i interface{}, e error) {
 		return j.SigningKey, nil
-	})
+	}, jwt.WithValidMethods([]string{"HS256"}), jwt.WithExpirationRequired())
 
 	if err != nil {
 		switch {
@@ -98,7 +100,7 @@ func (j *JWT) ParseToken(tokenString string) (*configs.CustomClaims, error) {
 // @param: jwt string, userName string
 // @return: err error
 func SetRedisJWT(jwt string, userName string) (err error) {
-	dr, err := ParseDuration(global.NAV_CONFIG.JWT.ExpiresTime)
+	dr, err := ParseDuration(global.Config().JWT.ExpiresTime)
 	if err != nil {
 		return err
 	}
@@ -107,27 +109,7 @@ func SetRedisJWT(jwt string, userName string) (err error) {
 	return err
 }
 
-func ParseDuration(d string) (time.Duration, error) {
-	d = strings.TrimSpace(d)
-	dr, err := time.ParseDuration(d)
-	if err == nil {
-		return dr, nil
-	}
-	if strings.Contains(d, "d") {
-		index := strings.Index(d, "d")
-
-		hour, _ := strconv.Atoi(d[:index])
-		dr = time.Hour * 24 * time.Duration(hour)
-		ndr, err := time.ParseDuration(d[index+1:])
-		if err != nil {
-			return dr, nil
-		}
-		return dr + ndr, nil
-	}
-
-	dv, err := strconv.ParseInt(d, 10, 64)
-	return time.Duration(dv), err
-}
+func ParseDuration(d string) (time.Duration, error) { return configs.ParseDuration(d) }
 
 func GetToken(c *gin.Context) string {
 	var token string
@@ -156,32 +138,20 @@ func GetToken(c *gin.Context) string {
 }
 
 func SetToken(c *gin.Context, token string, maxAge int) {
-	// 增加cookie x-token 向来源的web添加
-	host, _, err := net.SplitHostPort(c.Request.Host)
-	if err != nil {
-		host = c.Request.Host
+	config := global.RequestConfig(c).JWT
+	sameSite := http.SameSiteLaxMode
+	switch config.CookieSameSite {
+	case "strict":
+		sameSite = http.SameSiteStrictMode
+	case "none":
+		sameSite = http.SameSiteNoneMode
 	}
-
-	if net.ParseIP(host) != nil {
-		c.SetCookie(TokenHeader, token, maxAge, "/", "", false, false)
-	} else {
-		c.SetCookie(TokenHeader, token, maxAge, "/", host, false, false)
-	}
+	c.SetSameSite(sameSite)
+	// Host-only cookies prevent subdomain scope from depending on an untrusted Host header.
+	c.SetCookie(TokenHeader, token, maxAge, "/", "", config.CookieSecure || c.Request.TLS != nil, true)
 }
 
-func ClearToken(c *gin.Context) {
-	// 增加cookie x-token 向来源的web添加
-	host, _, err := net.SplitHostPort(c.Request.Host)
-	if err != nil {
-		host = c.Request.Host
-	}
-
-	if net.ParseIP(host) != nil {
-		c.SetCookie(TokenHeader, "", -1, "/", "", false, false)
-	} else {
-		c.SetCookie(TokenHeader, "", -1, "/", host, false, false)
-	}
-}
+func ClearToken(c *gin.Context) { SetToken(c, "", -1) }
 
 func GetClaims(c *gin.Context) (*configs.CustomClaims, error) {
 	if v, ok := c.Get("claims"); ok {

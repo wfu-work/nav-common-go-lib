@@ -2,7 +2,6 @@ package services
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
@@ -12,97 +11,6 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
-
-// InitializeIdentity is idempotent. It migrates legacy users into a default company,
-// clones their role grants, and never turns a role code into platform identity.
-func InitializeIdentity(db *gorm.DB) error {
-	return db.Transaction(func(tx *gorm.DB) error {
-		var users []domains.SysUser
-		if err := tx.Find(&users).Error; err != nil {
-			return err
-		}
-		seen := map[string]string{}
-		for _, u := range users {
-			key := strings.ToLower(strings.TrimSpace(u.Username))
-			if key == "" {
-				return errors.New("用户名不能为空")
-			}
-			if previous, ok := seen[key]; ok && previous != u.Guid {
-				return fmt.Errorf("用户名重复，需先处理：%s", key)
-			}
-			seen[key] = u.Guid
-			if key == "admin" && u.Guid != domains.BuiltinAdminGUID {
-				return errors.New("admin 为系统保留账号，请先处理历史重名账号")
-			}
-			if err := tx.Model(&u).UpdateColumn("username", key).Error; err != nil {
-				return err
-			}
-		}
-		if !tx.Migrator().HasIndex(&domains.SysUser{}, "idx_sys_user_username") {
-			if err := tx.Exec("CREATE UNIQUE INDEX idx_sys_user_username ON sys_user (username)").Error; err != nil {
-				return err
-			}
-		}
-		legacy := domains.SysCompany{BaseDataEntity: domains.BaseDataEntity{Guid: domains.DefaultCompanyGUID}, Name: "默认企业", Code: "LEGACY", Status: 1, Enabled: true}
-		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&legacy).Error; err != nil {
-			return err
-		}
-		for _, u := range users {
-			if u.Guid == domains.BuiltinAdminGUID {
-				if err := tx.Model(&u).Updates(map[string]any{"username": "admin", "company_guid": "", "enable": 1}).Error; err != nil {
-					return err
-				}
-				continue
-			}
-			if u.CompanyGuid == "" {
-				u.CompanyGuid = domains.DefaultCompanyGUID
-				if err := tx.Model(&u).UpdateColumn("company_guid", u.CompanyGuid).Error; err != nil {
-					return err
-				}
-			}
-			var oldRoles []domains.SysRole
-			if err := tx.Model(&domains.SysRole{}).Joins("JOIN sys_user_role ur ON ur.role_guid = sys_role.guid").Where("ur.user_guid = ? AND (sys_role.company_guid = '' OR sys_role.company_guid IS NULL)", u.Guid).Find(&oldRoles).Error; err != nil {
-				return err
-			}
-			for _, old := range oldRoles {
-				code := old.Code
-				if code == "SUPER_ADMIN" {
-					code = "VIEWER"
-				}
-				var role domains.SysRole
-				err := tx.Where("company_guid = ? AND code = ?", u.CompanyGuid, code).First(&role).Error
-				if errors.Is(err, gorm.ErrRecordNotFound) {
-					role = domains.SysRole{BaseDataEntity: domains.BaseDataEntity{Guid: uuid.NewString()}, CompanyGuid: u.CompanyGuid, Name: old.Name, Code: code, Enabled: true, BuiltIn: code == "COMPANY_ADMIN"}
-					if err := tx.Create(&role).Error; err != nil {
-						return err
-					}
-					if old.Code != "SUPER_ADMIN" {
-						var grants []domains.SysRolePermission
-						if err := tx.Where("role_guid = ?", old.Guid).Find(&grants).Error; err != nil {
-							return err
-						}
-						for _, g := range grants {
-							g.Id = 0
-							g.RoleGuid = role.Guid
-							if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&g).Error; err != nil {
-								return err
-							}
-						}
-					}
-				} else if err != nil {
-					return err
-				}
-				if err := tx.Where("user_guid = ? AND role_guid = ?", u.Guid, old.Guid).Delete(&domains.SysUserRole{}).Error; err != nil {
-					return err
-				}
-				if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&domains.SysUserRole{UserGuid: u.Guid, RoleGuid: role.Guid}).Error; err != nil {
-					return err
-				}
-			}
-		}
-		return nil
-	})
-}
 
 func InitializeCompanyRoles(db *gorm.DB, company string) error {
 	for _, preset := range []struct{ code, name string }{{"COMPANY_ADMIN", "企业管理员"}, {"OPERATOR", "运维人员"}, {"VIEWER", "只读人员"}} {
@@ -188,7 +96,7 @@ func SaveManagedUser(a *AccessContext, req UserSaveRequest) (string, error) {
 			return errors.New("用户名为空或为系统保留账号")
 		}
 		var n int64
-		if err := tx.Model(&domains.SysUser{}).Where("LOWER(username) = ? AND guid <> ?", name, req.Guid).Count(&n).Error; err != nil {
+		if err := tx.Unscoped().Model(&domains.SysUser{}).Where("username = ? AND guid <> ?", name, req.Guid).Count(&n).Error; err != nil {
 			return err
 		}
 		if n > 0 {
@@ -200,7 +108,7 @@ func SaveManagedUser(a *AccessContext, req UserSaveRequest) (string, error) {
 		if email != "" {
 			candidates = append(candidates, email)
 		}
-		if err := tx.Model(&domains.SysUser{}).Where("guid <> ? AND (LOWER(username) IN ? OR (email <> '' AND LOWER(email) IN ?))", req.Guid, candidates, candidates).Count(&n).Error; err != nil {
+		if err := tx.Unscoped().Model(&domains.SysUser{}).Where("guid <> ? AND (username IN ? OR (email <> '' AND email IN ?))", req.Guid, candidates, candidates).Count(&n).Error; err != nil {
 			return err
 		}
 		if n > 0 {
@@ -230,7 +138,10 @@ func SaveManagedUser(a *AccessContext, req UserSaveRequest) (string, error) {
 			if len(plain) < 8 {
 				return errors.New("密码至少8位")
 			}
-			u.Password = utils.BcryptHash(plain)
+			u.Password, err = utils.BcryptHashE(plain)
+			if err != nil {
+				return err
+			}
 		} else if !existing {
 			return errors.New("请设置初始密码")
 		}
