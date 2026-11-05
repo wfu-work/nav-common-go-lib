@@ -49,6 +49,18 @@ func ApiLogger() gin.HandlerFunc {
 		userGuid := utils.GetUserGuid(c)
 		username := utils.GetUserName(c)
 		companyGuid := utils.GetCompanyGuid(c)
+		targetCompany := c.Query("companyGuid")
+		if targetCompany == "" {
+			var payload struct {
+				CompanyGuid string `json:"companyGuid"`
+			}
+			if json.Unmarshal(body, &payload) == nil {
+				targetCompany = payload.CompanyGuid
+			}
+		}
+		if targetCompany == "" {
+			targetCompany = companyGuid
+		}
 
 		path := c.Request.URL.Path
 		path = strings.TrimPrefix(path, global.NAV_CONFIG.System.RouterPrefix)
@@ -62,20 +74,24 @@ func ApiLogger() gin.HandlerFunc {
 
 		c.Next()
 
+		if target := c.GetString("targetCompanyGuid"); target != "" {
+			targetCompany = target
+		}
 		domestic, provinces, glo, _ := ip2geo.GetIpLocation(ip)
 		offTime := time.Since(start).Milliseconds()
 		sysLog := domains.SysLog{
-			CompanyGuid: companyGuid,
-			Username:    username,
-			UserGuid:    userGuid,
-			Operation:   path,
-			Method:      method,
-			Params:      bodyStr,
-			IP:          ip,
-			Address:     glo + "|" + provinces + "|" + domestic,
-			UserAgent:   userAgent,
-			Exception:   errorsStr,
-			Time:        offTime,
+			CompanyGuid:       companyGuid,
+			TargetCompanyGuid: targetCompany,
+			Username:          username,
+			UserGuid:          userGuid,
+			Operation:         path,
+			Method:            method,
+			Params:            bodyStr,
+			IP:                ip,
+			Address:           glo + "|" + provinces + "|" + domestic,
+			UserAgent:         userAgent,
+			Exception:         errorsStr,
+			Time:              offTime,
 		}
 		err := services.LoggerServiceApp.Create(sysLog)
 		if err != nil {

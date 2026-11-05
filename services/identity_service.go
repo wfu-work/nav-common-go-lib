@@ -3,13 +3,14 @@ package services
 import (
 	"errors"
 	"fmt"
+	"strings"
+
 	"github.com/google/uuid"
 	"github.com/wfu-work/nav-common-go-lib/domains"
 	"github.com/wfu-work/nav-common-go-lib/global"
 	"github.com/wfu-work/nav-common-go-lib/utils"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"strings"
 )
 
 // InitializeIdentity is idempotent. It migrates legacy users into a default company,
@@ -60,7 +61,7 @@ func InitializeIdentity(db *gorm.DB) error {
 				}
 			}
 			var oldRoles []domains.SysRole
-			if err := tx.Model(&domains.SysRole{}).Joins("JOIN sys_user_role ur ON ur.role_guid = sys_role.guid").Where("ur.user_guid = ? AND sys_role.company_guid = ''", u.Guid).Find(&oldRoles).Error; err != nil {
+			if err := tx.Model(&domains.SysRole{}).Joins("JOIN sys_user_role ur ON ur.role_guid = sys_role.guid").Where("ur.user_guid = ? AND (sys_role.company_guid = '' OR sys_role.company_guid IS NULL)", u.Guid).Find(&oldRoles).Error; err != nil {
 				return err
 			}
 			for _, old := range oldRoles {
@@ -127,6 +128,9 @@ func InitializeCompanyRoles(db *gorm.DB, company string) error {
 		}
 		selected := []string{}
 		for _, p := range permissions {
+			if (strings.HasPrefix(p.Code, "user.") || strings.HasPrefix(p.Code, "role.")) && preset.code != "COMPANY_ADMIN" {
+				continue
+			}
 			if preset.code != "VIEWER" || p.Type == domains.PermissionTypeMenu || strings.HasSuffix(p.Code, ".read") || strings.HasSuffix(p.Code, ".download") {
 				selected = append(selected, p.Guid)
 			}
@@ -157,27 +161,27 @@ func SaveManagedUser(a *AccessContext, req UserSaveRequest) (string, error) {
 	if a == nil || !a.CompanyAdmin() {
 		return "", errors.New("需要企业管理员权限")
 	}
+	company, err := TargetCompany(a, req.CompanyGuid)
+	if err != nil {
+		return "", err
+	}
 	var saved string
-	err := global.NAV_DB.Transaction(func(tx *gorm.DB) error {
+	err = global.NAV_DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockCompanyIdentity(tx, company); err != nil {
+			return err
+		}
 		var u domains.SysUser
 		existing := req.Guid != ""
 		if existing {
 			if err := tx.Where("guid = ?", req.Guid).First(&u).Error; err != nil {
 				return err
 			}
-			if !a.PlatformAdmin() && u.CompanyGuid != a.User.CompanyGuid {
-				return errors.New("无权访问其他企业")
+			if u.PlatformAdmin() {
+				return errors.New("内置 admin 请通过个人中心修改密码")
 			}
-		}
-		if u.PlatformAdmin() {
-			return errors.New("内置 admin 请通过个人中心修改密码或资料")
-		}
-		company, err := TargetCompany(a, req.CompanyGuid)
-		if err != nil {
-			return err
-		}
-		if existing && u.CompanyGuid != company {
-			return errors.New("用户企业归属不可直接修改")
+			if u.CompanyGuid != company {
+				return errors.New("用户企业归属不可直接修改")
+			}
 		}
 		name := strings.ToLower(strings.TrimSpace(req.Username))
 		if name == "" || name == "admin" {
@@ -233,7 +237,11 @@ func SaveManagedUser(a *AccessContext, req UserSaveRequest) (string, error) {
 		if existing {
 			u.AuthVersion++
 		}
+		enabled := u.Enable
 		if err := tx.Save(&u).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&u).UpdateColumn("enable", enabled).Error; err != nil {
 			return err
 		}
 		if req.RoleGuidList != nil {
@@ -291,16 +299,23 @@ func DeleteManagedUser(a *AccessContext, guid string) error {
 	if a == nil || !a.CompanyAdmin() {
 		return errors.New("需要企业管理员权限")
 	}
+	var target domains.SysUser
+	if err := global.NAV_DB.Where("guid = ?", guid).First(&target).Error; err != nil {
+		return err
+	}
+	if target.PlatformAdmin() {
+		return errors.New("不能删除内置 admin")
+	}
+	if !a.PlatformAdmin() && target.CompanyGuid != a.User.CompanyGuid {
+		return errors.New("无权访问其他企业")
+	}
 	return global.NAV_DB.Transaction(func(tx *gorm.DB) error {
-		var u domains.SysUser
-		if err := tx.Where("guid = ?", guid).First(&u).Error; err != nil {
+		if err := lockCompanyIdentity(tx, target.CompanyGuid); err != nil {
 			return err
 		}
-		if u.PlatformAdmin() {
-			return errors.New("不能删除内置 admin")
-		}
-		if !a.PlatformAdmin() && u.CompanyGuid != a.User.CompanyGuid {
-			return errors.New("无权访问其他企业")
+		var u domains.SysUser
+		if err := tx.Where("guid = ? AND company_guid = ?", guid, target.CompanyGuid).First(&u).Error; err != nil {
+			return err
 		}
 		if err := tx.Where("user_guid = ?", guid).Delete(&domains.SysUserRole{}).Error; err != nil {
 			return err
@@ -310,4 +325,11 @@ func DeleteManagedUser(a *AccessContext, guid string) error {
 		}
 		return ensureCompanyAdmin(tx, u.CompanyGuid)
 	})
+}
+
+// Mutations that can remove the last administrator serialize on this row before
+// reading role assignments; SQLite serializes its writers itself.
+func lockCompanyIdentity(tx *gorm.DB, company string) error {
+	var c domains.SysCompany
+	return tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("guid = ?", company).First(&c).Error
 }

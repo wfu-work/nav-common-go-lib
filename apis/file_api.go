@@ -4,6 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/wfu-work/nav-common-go-lib/global"
 	"github.com/wfu-work/nav-common-go-lib/response"
+	"github.com/wfu-work/nav-common-go-lib/services"
 	"go.uber.org/zap"
 )
 
@@ -20,13 +21,18 @@ type FileApi struct{}
 // @Success 200  {object}  response.Response{data=string,msg=string}
 // @Router /file/upload [post]
 func (i *FileApi) Upload(c *gin.Context) {
-	_, header, err := c.Request.FormFile("file")
+	header, err := c.FormFile("file")
 	if err != nil {
 		global.NAV_LOG.Error("上传文件失败!", zap.Error(err))
 		response.FailWithMessage("上传文件失败", c)
 		return
 	}
-	path, err := fileService.UploadFile(header)
+	scoped, err := requestFileService(c)
+	if err != nil {
+		accessReply(c, nil, err)
+		return
+	}
+	path, err := scoped.UploadFile(header)
 	if err != nil {
 		global.NAV_LOG.Error("上传文件失败!", zap.Error(err))
 		response.FailWithMessage("上传文件失败", c)
@@ -51,7 +57,12 @@ func (i *FileApi) UploadBase64(c *gin.Context) {
 		response.FailWithMessage("请求参数错误", c)
 		return
 	}
-	path, err := fileService.UploadBase64(params)
+	scoped, err := requestFileService(c)
+	if err != nil {
+		accessReply(c, nil, err)
+		return
+	}
+	path, err := scoped.UploadBase64(params)
 	if err != nil {
 		global.NAV_LOG.Error("上传文件失败!", zap.Error(err))
 		response.FailWithMessage("上传文件失败", c)
@@ -72,10 +83,24 @@ func (i *FileApi) UploadBase64(c *gin.Context) {
 // @Router /file/download [get]
 func (i *FileApi) Download(c *gin.Context) {
 	path := c.Query("path")
-	err := fileService.DownloadFile(path, c)
+	scoped, err := requestFileService(c)
+	if err != nil {
+		accessReply(c, nil, err)
+		return
+	}
+	err = scoped.DownloadFile(path, c)
 	if err != nil {
 		response.FailWithDetailed(false, err.Error(), c)
 		return
 	}
-	response.Ok(true, c)
+
+}
+
+func requestFileService(c *gin.Context) (services.FileService, error) {
+	a := services.RequestAccess(c)
+	if a.PlatformAdmin() && c.Query("companyGuid") == "" {
+		return *services.FileServiceApp, nil
+	}
+	company, err := services.TargetCompany(a, c.Query("companyGuid"))
+	return services.FileServiceApp.WithCompany("companies/" + company), err
 }

@@ -3,6 +3,11 @@ package middlewares_test
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
 	"github.com/gin-gonic/gin"
 	"github.com/patrickmn/go-cache"
 	"github.com/wfu-work/nav-common-go-lib/apis"
@@ -14,10 +19,6 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"net/http"
-	"net/http/httptest"
-	"strings"
-	"testing"
 )
 
 func fixture(t *testing.T) (*gorm.DB, *gin.Engine, map[string]string) {
@@ -127,6 +128,89 @@ func TestTenantIdentityManagement(t *testing.T) {
 		t.Fatal("deleted builtin admin")
 	}
 }
+
+func TestCompanyDisabledStateIsPreserved(t *testing.T) {
+	db, r, tokens := fixture(t)
+	password, err := utils.AesEncrypt("Tenant12345")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := json.Marshal(map[string]any{"name": "Disabled company", "code": "DISABLED", "enabled": false, "adminUsername": "disabled_owner", "adminPassword": password})
+	w := request(r, "POST", "/api/company", tokens["admin"], string(payload))
+	var result struct {
+		Code int
+		Data string
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || result.Code != 200 {
+		t.Fatal("create disabled company", w.Body.String(), err)
+	}
+	var owner domains.SysUser
+	if err := db.Where("company_guid = ?", result.Data).First(&owner).Error; err != nil {
+		t.Fatal(err)
+	}
+	for i, enabled := range []bool{false, true, false} {
+		if i > 0 {
+			payload, _ = json.Marshal(map[string]any{"guid": result.Data, "name": "Disabled company", "code": "DISABLED", "status": 1, "enabled": enabled})
+			w = request(r, "POST", "/api/company", tokens["admin"], string(payload))
+			var updated struct{ Code int }
+			if err := json.Unmarshal(w.Body.Bytes(), &updated); err != nil || updated.Code != 200 {
+				t.Fatal("update company state", w.Body.String(), err)
+			}
+		}
+		var company domains.SysCompany
+		if err := db.Where("guid = ?", result.Data).First(&company).Error; err != nil || company.Enabled != enabled {
+			t.Fatalf("company state: %+v %v, wanted %v", company, err, enabled)
+		}
+		if _, err := services.LoadAccess(db, owner.Guid); (err == nil) != enabled {
+			t.Fatalf("company enabled=%v access error=%v", enabled, err)
+		}
+	}
+}
+
+func TestIdentityMigrationHandlesLegacyNullCompanyAndIsIdempotent(t *testing.T) {
+	db, _, _ := fixture(t)
+	permission := domains.SysPermission{BaseDataEntity: domains.BaseDataEntity{Guid: "legacy-read"}, Code: "project.read", Name: "read", Type: "menu", Scope: "company", Enabled: true}
+	if err := db.Create(&permission).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range []struct{ user, code string }{{"ua", "USER"}, {"ub", "SUPER_ADMIN"}} {
+		role := domains.SysRole{BaseDataEntity: domains.BaseDataEntity{Guid: "legacy-" + entry.code}, Name: entry.code, Code: entry.code, Enabled: true}
+		if err := db.Create(&role).Error; err != nil {
+			t.Fatal(err)
+		}
+		// ALTER TABLE adds nullable company_guid to roles in pre-company schemas.
+		if err := db.Model(&role).UpdateColumn("company_guid", nil).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&domains.SysRolePermission{RoleGuid: role.Guid, PermissionGuid: permission.Guid}).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&domains.SysUserRole{UserGuid: entry.user, RoleGuid: role.Guid}).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Model(&domains.SysUser{}).Where("guid = ?", entry.user).UpdateColumn("company_guid", "").Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < 2; i++ {
+		if err := services.InitializeIdentity(db); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, entry := range []struct{ user, code string }{{"ua", "USER"}, {"ub", "VIEWER"}} {
+		access, err := services.LoadAccess(db, entry.user)
+		if err != nil || access.PlatformAdmin() || access.User.CompanyGuid != domains.DefaultCompanyGUID || len(access.Roles) != 1 || access.Roles[0].Code != entry.code {
+			t.Fatalf("legacy identity %s: %+v %v", entry.user, access, err)
+		}
+		if access.Has("project.read") != (entry.code == "USER") {
+			t.Fatalf("legacy grants were lost or escalated: %+v", access)
+		}
+	}
+	admin, err := services.LoadAccess(db, domains.BuiltinAdminGUID)
+	if err != nil || !admin.PlatformAdmin() {
+		t.Fatalf("builtin identity changed: %+v %v", admin, err)
+	}
+}
 func TestPermissionsDependenciesAndScope(t *testing.T) {
 	db, _, _ := fixture(t)
 	role := domains.SysRole{BaseDataEntity: domains.BaseDataEntity{Guid: "r"}, CompanyGuid: "a", Code: "OPERATOR", Name: "operator", Enabled: true}
@@ -150,5 +234,53 @@ func TestPermissionsDependenciesAndScope(t *testing.T) {
 	grants, _ = svc.RolePermissions("r")
 	if len(grants) != 3 {
 		t.Fatal("failed authorization changed grants")
+	}
+}
+
+func TestCompanyAssetsCannotCrossTenantBoundaries(t *testing.T) {
+	db, r, tokens := fixture(t)
+	global.NAV_CONFIG.Local.OssPath = t.TempDir()
+	global.NAV_CONFIG.Local.ProxyOssPath = "/oss"
+	file := apis.FileApi{}
+	group := r.Group("/api").Use(middlewares.JWTAuth(), middlewares.CasbinHandler())
+	group.POST("/file/upload/base64", file.UploadBase64)
+	group.GET("/file/download", file.Download)
+	group.GET("/oss/*filepath", func(c *gin.Context) { c.Status(204) })
+	role := domains.SysRole{BaseDataEntity: domains.BaseDataEntity{Guid: "uploader"}, CompanyGuid: "a", Code: "UPLOADER", Name: "upload", Enabled: true}
+	db.Create(&role)
+	permission := domains.SysPermission{BaseDataEntity: domains.BaseDataEntity{Guid: "upload"}, Code: "project.write", Type: "button", Name: "upload", Scope: "company", Enabled: true}
+	db.Create(&permission)
+	db.Create(&domains.SysRolePermission{RoleGuid: role.Guid, PermissionGuid: permission.Guid})
+	db.Create(&domains.SysUserRole{UserGuid: "ua", RoleGuid: role.Guid})
+	uploaded := request(r, "POST", "/api/file/upload/base64", tokens["alice"], `{"data":"aGVsbG8=","fileName":"test.png"}`)
+	var result struct {
+		Code int
+		Data string
+	}
+	if err := json.Unmarshal(uploaded.Body.Bytes(), &result); err != nil || result.Code != 200 {
+		t.Fatal("upload", uploaded.Body.String(), err)
+	}
+	if !strings.HasPrefix(result.Data, "/api/oss/companies/a/") {
+		t.Fatal("missing ownership prefix", result.Data)
+	}
+	if got := request(r, "GET", result.Data, tokens["bob"], "").Code; got != 403 {
+		t.Fatal("foreign static asset", got)
+	}
+	if got := request(r, "GET", result.Data, tokens["alice"], "").Code; got != 204 {
+		t.Fatal("own static asset", got)
+	}
+	if got := request(r, "GET", result.Data, "", "").Code; got != 401 {
+		t.Fatal("anonymous static asset", got)
+	}
+	own := request(r, "GET", "/api/file/download?path="+result.Data, tokens["alice"], "")
+	if own.Body.String() != "hello" {
+		t.Fatal("own download", own.Body.String())
+	}
+	foreign := request(r, "GET", "/api/file/download?path="+result.Data, tokens["bob"], "")
+	if strings.Contains(foreign.Body.String(), "hello") {
+		t.Fatal("foreign download")
+	}
+	if got := request(r, "GET", result.Data, tokens["admin"], "").Code; got != 204 {
+		t.Fatal("platform asset access", got)
 	}
 }

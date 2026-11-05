@@ -2,6 +2,8 @@ package apis
 
 import (
 	"errors"
+	"strings"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/wfu-work/nav-common-go-lib/domains"
@@ -10,7 +12,6 @@ import (
 	"github.com/wfu-work/nav-common-go-lib/services"
 	"github.com/wfu-work/nav-common-go-lib/utils"
 	"gorm.io/gorm"
-	"strings"
 )
 
 type CompanyApi struct{}
@@ -52,19 +53,21 @@ func (CompanyApi) Save(c *gin.Context) {
 			if err := tx.Where("guid = ?", company.Guid).First(&old).Error; err != nil {
 				return err
 			}
+			company.BaseDataEntity = old.BaseDataEntity
 			company.Enabled = old.Enabled
 		} else {
-			company.Guid = uuid.NewString()
+			company.BaseDataEntity = domains.BaseDataEntity{Guid: uuid.NewString()}
 			company.Enabled = true
 			company.Status = 1
 		}
 		if req.Enabled != nil {
 			company.Enabled = *req.Enabled
 		}
+		enabled := company.Enabled
 		if err := tx.Save(&company).Error; err != nil {
 			return err
 		}
-		if err := tx.Model(&company).UpdateColumn("enabled", company.Enabled).Error; err != nil {
+		if err := tx.Model(&company).UpdateColumn("enabled", enabled).Error; err != nil {
 			return err
 		}
 		id = company.Guid
@@ -100,6 +103,7 @@ func (CompanyApi) Save(c *gin.Context) {
 		return nil
 	})
 	if err == nil {
+		c.Set("targetCompanyGuid", id)
 		refreshCasbinAfterPermissionChange(c)
 	}
 	if !c.IsAborted() {
@@ -134,6 +138,12 @@ func (CompanyApi) List(c *gin.Context) {
 	}
 	companies := []domains.SysCompany{}
 	err := db.Scopes(q.Paginate()).Order("id DESC").Find(&companies).Error
+	if !services.RequestAccess(c).PlatformAdmin() {
+		for i := range companies {
+			companies[i].ApiKey = ""
+			companies[i].Certificate = ""
+		}
+	}
 	accessReply(c, domains.PageResult{Data: companies, Total: n, Page: q.Page, Size: q.Size}, err)
 }
 func (CompanyApi) ListAll(c *gin.Context) {

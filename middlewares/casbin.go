@@ -138,6 +138,28 @@ func CasbinHandler() gin.HandlerFunc {
 			c.Next()
 			return
 		}
+		// Uploaded assets live under an immutable company prefix. Static reads
+		// still require a live authenticated user and never expose other tenants.
+		oss := strings.TrimRight(global.NAV_CONFIG.Local.ProxyOssPath, "/")
+		if oss != "" && strings.HasPrefix(urlPath, oss+"/") {
+			relative := strings.TrimPrefix(urlPath, oss+"/")
+			if strings.HasPrefix(relative, "companies/"+a.User.CompanyGuid+"/") && !strings.Contains(relative, "..") && !strings.Contains(relative, "\\") {
+				c.Next()
+				return
+			}
+			response.NoPermission("无权访问其他企业文件", c)
+			c.Abort()
+			return
+		}
+		if strings.HasPrefix(urlPath, "/file/") {
+			if method == "GET" || a.CompanyAdmin() || a.Has("project.write") || a.Has("device.write") {
+				c.Next()
+				return
+			}
+			response.NoPermission("缺少上传权限", c)
+			c.Abort()
+			return
+		}
 		// System administration cannot be delegated through a forged role code or API wildcard.
 		if strings.HasPrefix(urlPath, "/company") || strings.HasPrefix(urlPath, "/user") || strings.HasPrefix(urlPath, "/role") || strings.HasPrefix(urlPath, "/permission") {
 			if !a.CompanyAdmin() {

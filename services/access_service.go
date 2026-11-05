@@ -2,12 +2,13 @@ package services
 
 import (
 	"errors"
+	"strings"
+	"time"
+
 	"github.com/gin-gonic/gin"
 	"github.com/wfu-work/nav-common-go-lib/domains"
 	"github.com/wfu-work/nav-common-go-lib/global"
 	"gorm.io/gorm"
-	"strings"
-	"time"
 )
 
 type AccessContext struct {
@@ -95,6 +96,7 @@ func LoadAccess(db *gorm.DB, guid string) (*AccessContext, error) {
 	for _, p := range a.Permissions {
 		a.User.AbilityList = append(a.User.AbilityList, p.Code)
 	}
+	a.User.IsCompanyAdmin = a.CompanyAdmin()
 	a.User.Abilities = a.User.AbilityList
 	return a, nil
 }
@@ -113,6 +115,9 @@ func AccessDB(c *gin.Context, model any) *gorm.DB {
 	return db.Where("company_guid = ?", a.User.CompanyGuid)
 }
 func TargetCompany(a *AccessContext, requested string) (string, error) {
+	return targetCompanyDB(global.NAV_DB, a, requested)
+}
+func targetCompanyDB(db *gorm.DB, a *AccessContext, requested string) (string, error) {
 	if a == nil {
 		return "", errors.New("未登录")
 	}
@@ -127,7 +132,7 @@ func TargetCompany(a *AccessContext, requested string) (string, error) {
 		return "", errors.New("请选择企业")
 	}
 	var n int64
-	if err := global.NAV_DB.Model(&domains.SysCompany{}).Where("guid = ?", requested).Count(&n).Error; err != nil {
+	if err := db.Model(&domains.SysCompany{}).Where("guid = ?", requested).Count(&n).Error; err != nil {
 		return "", err
 	}
 	if n != 1 {

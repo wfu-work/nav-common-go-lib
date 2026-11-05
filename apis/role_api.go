@@ -2,6 +2,8 @@ package apis
 
 import (
 	"errors"
+	"strings"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/wfu-work/nav-common-go-lib/domains"
@@ -9,7 +11,6 @@ import (
 	"github.com/wfu-work/nav-common-go-lib/response"
 	"github.com/wfu-work/nav-common-go-lib/services"
 	"gorm.io/gorm"
-	"strings"
 )
 
 type RoleApi struct{}
@@ -63,7 +64,11 @@ func (RoleApi) Save(c *gin.Context) {
 		if req.Enabled != nil {
 			role.Enabled = *req.Enabled
 		}
-		return tx.Save(&role).Error
+		enabled := role.Enabled
+		if err := tx.Save(&role).Error; err != nil {
+			return err
+		}
+		return tx.Model(&role).UpdateColumn("enabled", enabled).Error
 	})
 	if err == nil {
 		refreshCasbinAfterPermissionChange(c)

@@ -281,8 +281,10 @@ companySvc := services.CompanyServiceApp.WithDB(tx)
 
 嵌入宿主在表结构及种子数据初始化完成后，调用 `services.InitializeIdentity(db)` 执行历史账号迁移；业务权限目录注册完成后，对各企业调用 `InitializeCompanyRoles` 完成一次性的预置角色授权。迁移将未归属企业的普通账号放入默认企业，复制旧企业角色并移除其他账号的历史平台身份。发现重名账号时迁移报错，需要先处理冲突。
 
-`POST /company` 创建企业时，同时提交 `adminUsername` 和经 `/secret/encrypt` 加密的 `adminPassword`；企业、预置角色、初始管理员在同一事务创建。`POST /user` 支持 `roleGuidList`，也可通过 `PUT /user/:guid/roles` 单独分配。`GET /user/token` 返回 `company` 摘要、`abilityList`、`isPlatformAdmin` 和 `dataScope`。`PUT /company/current` 只修改当前企业允许编辑的资料。
+`POST /company` 创建企业时，同时提交 `adminUsername` 和经 `/secret/encrypt` 加密的 `adminPassword`；企业、预置角色、初始管理员在同一事务创建。`POST /user` 支持 `roleGuidList`，也可通过 `PUT /user/:guid/roles` 单独分配。`GET /user/token` 返回 `company` 摘要、`abilityList`、`isPlatformAdmin`、`isCompanyAdmin` 和 `dataScope`。`PUT /company/current` 只修改当前企业允许编辑的资料。
 
 每次请求重新检查用户、企业、当前角色和授权版本。保存账号、修改角色分配、修改密码或退出登录后，旧会话失效。内置 admin 与最后一位企业管理员受到保护。企业删除接口保留数据并拒绝删除，应使用停用功能。
 
 认证白名单按 HTTP 方法和路径匹配。公共接口仅保留登录、验证码、加密和公开配置摘要；配置写入、解密和文件存储不再匿名开放。业务宿主仍必须给数据查询、修改及文件服务接入企业范围约束，不能仅依赖 Casbin 的 API 权限。
+
+企业附件存入 `companies/<companyGuid>/`，静态读取及下载均校验实时身份和企业前缀。审计日志同时记录操作人企业与 `targetCompanyGuid`，便于追踪平台管理员对其他企业的操作。

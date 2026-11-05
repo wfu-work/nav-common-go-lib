@@ -16,7 +16,15 @@ import (
 	"go.uber.org/zap"
 )
 
-type FileService struct{}
+type FileService struct{ company string }
+
+func (s FileService) WithCompany(company string) FileService { s.company = company; return s }
+func (s FileService) storageRoot() string {
+	return filepath.Join(global.NAV_CONFIG.Local.OssPath, s.company)
+}
+func (s FileService) storageURL(name string) string {
+	return strings.TrimRight(global.NAV_CONFIG.System.RouterPrefix+global.NAV_CONFIG.Local.ProxyOssPath, "/") + "/" + filepath.ToSlash(filepath.Join(s.company, name))
+}
 
 var FileServiceApp = new(FileService)
 
@@ -26,14 +34,14 @@ func (s FileService) UploadFile(file *multipart.FileHeader) (string, error) {
 	ext := filepath.Ext(file.Filename)             // 读取文件后缀
 	name := strings.TrimSuffix(file.Filename, ext) // 读取文件名并加密
 	name = utils.MD5V([]byte(name))
-	filename := utils.GenerateGuid() + ext                                // 拼接新文件名
-	mkdirErr := os.MkdirAll(global.NAV_CONFIG.Local.OssPath, os.ModePerm) // 尝试创建此路径
+	filename := utils.GenerateGuid() + ext         // 拼接新文件名
+	mkdirErr := os.MkdirAll(s.storageRoot(), 0755) // 尝试创建此路径
 	if mkdirErr != nil {
 		global.NAV_LOG.Error("function os.MkdirAll() failed", zap.Any("err", mkdirErr.Error()))
 		return "", errors.New("function os.MkdirAll() failed, err:" + mkdirErr.Error())
 	}
-	p := global.NAV_CONFIG.Local.OssPath + utils.GetPathSeparator() + filename
-	filePath := global.NAV_CONFIG.System.RouterPrefix + global.NAV_CONFIG.Local.ProxyOssPath + utils.GetPathSeparator() + filename
+	p := filepath.Join(s.storageRoot(), filename)
+	filePath := s.storageURL(filename)
 
 	f, openError := file.Open()
 	if openError != nil {
@@ -67,7 +75,7 @@ func (s FileService) UploadBase64(params map[string]string) (string, error) {
 	if err != nil {
 		return "", errors.New("decode base64 failed err:" + err.Error())
 	}
-	mkdirErr := os.MkdirAll(global.NAV_CONFIG.Local.OssPath, os.ModePerm)
+	mkdirErr := os.MkdirAll(s.storageRoot(), 0755)
 	if mkdirErr != nil {
 		global.NAV_LOG.Error("function os.MkdirAll() failed", zap.Any("err", mkdirErr.Error()))
 		return "", errors.New("function os.MkdirAll() failed, err:" + mkdirErr.Error())
@@ -78,8 +86,8 @@ func (s FileService) UploadBase64(params map[string]string) (string, error) {
 		ext = filepath.Ext(fileName)
 	}
 	filename := utils.GenerateGuid() + ext
-	p := global.NAV_CONFIG.Local.OssPath + utils.GetPathSeparator() + filename
-	filePath := global.NAV_CONFIG.System.RouterPrefix + global.NAV_CONFIG.Local.ProxyOssPath + utils.GetPathSeparator() + filename
+	p := filepath.Join(s.storageRoot(), filename)
+	filePath := s.storageURL(filename)
 	if err := os.WriteFile(p, bytes, 0644); err != nil {
 		return "", err
 	}
@@ -93,7 +101,25 @@ func (s FileService) DownloadFile(path string, c *gin.Context) error {
 	if strings.Contains(path, "..") || strings.ContainsAny(path, `\:*?"<>|`) {
 		return errors.New("非法的路径")
 	}
-	var fullPath = filepath.Join(global.NAV_CONFIG.Local.OssPath, path)
+	path = strings.TrimPrefix(path, global.NAV_CONFIG.System.RouterPrefix+global.NAV_CONFIG.Local.ProxyOssPath+"/")
+	if s.company != "" && !strings.HasPrefix(path, s.company+"/") {
+		return errors.New("无权访问其他企业文件")
+	}
+	root, err := filepath.EvalSymlinks(global.NAV_CONFIG.Local.OssPath)
+	if err == nil {
+		root, err = filepath.Abs(root)
+	}
+	if err != nil {
+		return err
+	}
+	fullPath, err := filepath.EvalSymlinks(filepath.Join(root, path))
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(root, fullPath)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return errors.New("非法路径")
+	}
 	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
 		return errors.New("文件不存在")
 	}

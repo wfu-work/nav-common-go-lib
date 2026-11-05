@@ -74,6 +74,9 @@ func (s *UserService) UpdatePassword(userGuid string, passwordVo *vos.PasswordVo
 	if err != nil {
 		return false, errors.New("解密错误")
 	}
+	if len(newPassword) < 8 {
+		return false, errors.New("密码至少8位")
+	}
 	newPasswordHash := utils.BcryptHash(newPassword)
 	err = s.Update(*user, "password", newPasswordHash)
 	if err != nil {

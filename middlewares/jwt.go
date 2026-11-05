@@ -5,13 +5,14 @@ import (
 	"strconv"
 	"time"
 
+	"strings"
+
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/wfu-work/nav-common-go-lib/global"
 	"github.com/wfu-work/nav-common-go-lib/response"
 	"github.com/wfu-work/nav-common-go-lib/services"
 	"github.com/wfu-work/nav-common-go-lib/utils"
-	"strings"
 )
 
 func publicEndpoint(method, p string) bool {
@@ -25,7 +26,7 @@ func JWTAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		urlPath := c.Request.URL.Path
 		urlPath = strings.TrimPrefix(urlPath, global.NAV_CONFIG.System.RouterPrefix)
-		if publicEndpoint(c.Request.Method, urlPath) {
+		if publicEndpoint(c.Request.Method, urlPath) && (urlPath != "/configs" || utils.GetToken(c) == "") {
 			c.Next()
 			return
 		}

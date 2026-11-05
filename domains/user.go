@@ -22,6 +22,7 @@ type SysUser struct {
 	RoleCodeList    []string        `json:"roleCodeList" gorm:"-"`
 	Abilities       []string        `json:"abilities" gorm:"-"`
 	AbilityList     []string        `json:"abilityList" gorm:"-"`
+	IsCompanyAdmin  bool            `json:"isCompanyAdmin" gorm:"-"`
 	IsPlatformAdmin bool            `json:"isPlatformAdmin" gorm:"-"`
 	DataScope       string          `json:"dataScope" gorm:"-"`
 	Company         *CompanySummary `json:"company,omitempty" gorm:"-"`

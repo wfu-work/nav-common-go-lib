@@ -124,6 +124,9 @@ func (s *PermissionService) SetRolePermissions(roleGuid string, permissionGuids 
 			}
 		}
 		for _, child := range children[id] {
+			if role.CompanyGuid != "" && byGuid[child].Scope != "company" {
+				continue
+			}
 			if err := add(child); err != nil {
 				return err
 			}

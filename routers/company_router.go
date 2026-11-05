@@ -18,7 +18,7 @@ func (s *CompanyRouter) InitCompanyRouter(Router *gin.RouterGroup) {
 	}
 	{
 		router.GET("current", companyApi.Current)
-		router.PUT("current", companyApi.UpdateCurrent)
+		routerLogger.PUT("current", companyApi.UpdateCurrent)
 		router.GET(":guid", companyApi.GetByGuid)  // 查询企业
 		router.GET("list", companyApi.List)        // 分页获取企业列表
 		router.GET("list/all", companyApi.ListAll) // 获取所有企业列表
