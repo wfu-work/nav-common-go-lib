@@ -1,4 +1,4 @@
-package servicelog
+package sse
 
 import (
 	"encoding/json"
@@ -39,11 +39,28 @@ func (r *Recorder) Stream(w http.ResponseWriter, req *http.Request, f Filter, cu
 			return
 		}
 		batch, wake := r.Watch(f, cursor, 200)
+		backlog := false
+		if cursor != "" && batch.Gap && r.opts.Directory != "" {
+			recovered, err := r.Query(req.Context(), f, Page{After: cursor, Limit: 200})
+			if err != nil {
+				if !send("retry", "", map[string]string{"message": "历史续传正在等待日志落盘"}) {
+					return
+				}
+				select {
+				case <-req.Context().Done():
+					return
+				case <-time.After(time.Second):
+					continue
+				}
+			}
+			batch = recovered
+			backlog = batch.HasMore
+		}
 		if batch.Status.Closed {
 			return
 		}
 		if batch.Gap {
-			if !send("gap", "", map[string]string{"message": "续传游标超出内存保留范围，已返回最近日志；更早日志请查询历史"}) {
+			if !send("gap", "", map[string]string{"message": "部分日志已超过磁盘保留范围或读取期间被清理，当前续传结果存在缺口"}) {
 				return
 			}
 		}
@@ -53,8 +70,12 @@ func (r *Recorder) Stream(w http.ResponseWriter, req *http.Request, f Filter, cu
 			}
 		}
 		cursor = batch.Cursor
-		if !send("ready", cursor, batch.Status) {
+		ready := map[string]any{"status": batch.Status, "diskDropped": batch.Status.DiskDropped, "diskError": batch.Status.DiskError, "closed": batch.Status.Closed, "instanceId": r.boot, "cursor": cursor, "syncedAt": time.Now().UTC(), "replaying": backlog}
+		if !send("ready", cursor, ready) {
 			return
+		}
+		if backlog {
+			continue
 		}
 		// A full batch may have more retained events; drain before waiting.
 		if len(batch.Events) == 200 && len(batch.Events) > 0 && cursor == batch.Events[len(batch.Events)-1].ID {

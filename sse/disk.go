@@ -1,4 +1,4 @@
-package servicelog
+package sse
 
 import (
 	"bufio"
@@ -53,6 +53,15 @@ func (r *Recorder) prune(active string) error {
 				return e
 			}
 			total -= st.Size()
+			r.diskMu.Lock()
+			kept := r.blocks[:0]
+			for _, block := range r.blocks {
+				if block.Path != p {
+					kept = append(kept, block)
+				}
+			}
+			r.blocks = kept
+			r.diskMu.Unlock()
 		}
 	}
 	return nil
@@ -73,11 +82,15 @@ func (r *Recorder) readDisk(visit func(entry)) error {
 		}
 		s := bufio.NewScanner(f)
 		s.Buffer(make([]byte, 4096), r.opts.MaxEventBytes+1024)
+		var offset int64
 		for s.Scan() {
 			var event Event
 			if json.Unmarshal(s.Bytes(), &event) == nil && event.ID != "" {
-				visit(entry{event, append([]byte(nil), s.Bytes()...)})
+				x := entry{event: event, data: append([]byte(nil), s.Bytes()...)}
+				r.indexEntry(p, offset, x)
+				visit(x)
 			}
+			offset += int64(len(s.Bytes()) + 1)
 		}
 		e = s.Err()
 		_ = f.Close()
@@ -111,6 +124,14 @@ func (r *Recorder) persist() {
 			if !ok {
 				return
 			}
+			if x.barrier != nil {
+				var err error
+				if file != nil {
+					err = file.Sync()
+				}
+				x.barrier <- err
+				continue
+			}
 			if r.opts.Console != nil {
 				_, _ = r.opts.Console.Write(append(append([]byte(nil), x.data...), '\n'))
 			}
@@ -133,6 +154,9 @@ func (r *Recorder) persist() {
 				r.diskError(r.prune(path))
 			}
 			n, err := file.Write(append(append([]byte(nil), x.data...), '\n'))
+			if err == nil && n == len(x.data)+1 {
+				r.indexEntry(path, size, x)
+			}
 			size += int64(n)
 			r.diskError(err)
 		case <-ticker.C:

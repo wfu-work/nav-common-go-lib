@@ -1,4 +1,4 @@
-package servicelog
+package sse
 
 import (
 	"go.uber.org/zap/zapcore"
