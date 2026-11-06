@@ -11,15 +11,18 @@ import (
 
 type LogApi struct{}
 
-// Save 创建系统日志
-// @Summary 创建系统日志
-// @Description 创建系统日志
-// @Tags 系统模块
+// Save 写入系统日志。
+//
+// @Summary 写入系统日志
+// @Description 需要登录及接口权限，按提交的日志对象写入记录；guid 省略时自动生成，传入已有 guid 时按通用服务规则更新可变字段。常规审计日志由中间件自动记录，无需客户端重复提交。
+// @Tags 系统日志
 // @Security ApiKeyAuth
 // @Accept json
 // @Produce json
 // @Param data body domains.SysLog true "系统日志对象"
-// @Success 200 {object} response.Response{data=bool,msg=string}
+// @Success 200 {object} response.Response{data=bool} "成功时 code=200；业务失败时 code=400，原因见 msg"
+// @Failure 401 {object} response.Response "未登录、令牌过期或会话已失效"
+// @Failure 403 {object} response.Response "无接口权限或不满足所需管理员身份"
 // @Router /log [post]
 func (i LogApi) Save(c *gin.Context) {
 	var entity domains.SysLog
@@ -42,15 +45,17 @@ func (i LogApi) Save(c *gin.Context) {
 	response.Ok(true, c)
 }
 
-// DeleteByGuid 根据guid删除系统日志
-// @Summary 根据系统日志guid删除系统日志
-// @Description 根据系统日志guid删除系统日志
-// @Tags 系统模块
+// DeleteByGuid 删除系统日志。
+//
+// @Summary 删除系统日志
+// @Description 需要登录及接口权限，按 GUID 软删除指定日志。处理器本身不额外按企业过滤，宿主应限制此管理接口的授权范围。
+// @Tags 系统日志
 // @Security ApiKeyAuth
-// @Accept json
 // @Produce json
-// @Param guid path string true "系统日志guid"
-// @Success 200 {object} response.Response{data=bool,msg=string}
+// @Param guid path string true "记录 GUID"
+// @Success 200 {object} response.Response{data=bool} "成功时 code=200；业务失败时 code=400，原因见 msg"
+// @Failure 401 {object} response.Response "未登录、令牌过期或会话已失效"
+// @Failure 403 {object} response.Response "无接口权限或不满足所需管理员身份"
 // @Router /log/{guid} [delete]
 func (i LogApi) DeleteByGuid(c *gin.Context) {
 	guid := c.Param("guid")
@@ -63,15 +68,17 @@ func (i LogApi) DeleteByGuid(c *gin.Context) {
 	response.Ok(true, c)
 }
 
-// GetByGuid 获取系统日志信息
-// @Summary 根据系统日志guid获取系统日志
-// @Description 根据系统日志guid获取系统日志
-// @Tags 系统模块
+// GetByGuid 查询系统日志详情。
+//
+// @Summary 查询系统日志详情
+// @Description 需要登录及接口权限，按 GUID 查询日志；记录不存在时 data 为 null。处理器本身不额外按企业过滤，宿主应限制此管理接口的授权范围。
+// @Tags 系统日志
 // @Security ApiKeyAuth
-// @Accept json
 // @Produce json
-// @Param guid path string true "系统日志guid"
-// @Success 200 {object} response.Response{data=domains.SysLog,msg=string}
+// @Param guid path string true "记录 GUID"
+// @Success 200 {object} response.Response{data=domains.SysLog} "成功时 code=200；业务失败时 code=400，原因见 msg"
+// @Failure 401 {object} response.Response "未登录、令牌过期或会话已失效"
+// @Failure 403 {object} response.Response "无接口权限或不满足所需管理员身份"
 // @Router /log/{guid} [get]
 func (i LogApi) GetByGuid(c *gin.Context) {
 	guid := c.Param("guid")
@@ -84,15 +91,21 @@ func (i LogApi) GetByGuid(c *gin.Context) {
 	response.Ok(t, c)
 }
 
-// List 分页获取系统日志列表
-// @Summary 分页获取系统日志列表
-// @Description 分页获取系统日志列表
-// @Tags 系统模块
+// List 分页查询系统日志。
+//
+// @Summary 分页查询系统日志
+// @Description 需要登录及接口权限，默认按创建顺序倒序，支持 asc/desc 指定模型字段排序；page、size 必须提供非零值。处理器本身不额外按企业过滤。
+// @Tags 系统日志
 // @Security ApiKeyAuth
-// @Accept json
 // @Produce json
-// @Param data  query domains.PageInfo true  "页码, 每页大小"
-// @Success 200  {object}  response.Response{data=domains.PageResult,msg=string}  "分页获取系统日志列表,返回包括列表,总数,页码,每页数量"
+// @Param page query int true "页码，从 1 开始" default(1)
+// @Param size query int true "每页条数，最多 100 条" default(10)
+// @Param content query string false "模糊搜索：操作路径 operation"
+// @Param asc query string false "按指定模型字段升序；只允许模型字段名或列名"
+// @Param desc query string false "按指定模型字段降序；与 asc 同传时优先使用 desc"
+// @Success 200 {object} response.Response{data=domains.PageResult{data=[]domains.SysLog}} "成功时 code=200；业务失败时 code=400，原因见 msg"
+// @Failure 401 {object} response.Response "未登录、令牌过期或会话已失效"
+// @Failure 403 {object} response.Response "无接口权限或不满足所需管理员身份"
 // @Router /log/list [get]
 func (i LogApi) List(c *gin.Context) {
 	var pageInfo domains.PageInfo

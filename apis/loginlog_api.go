@@ -11,16 +11,10 @@ import (
 
 type LoginLogApi struct{}
 
-// Save 创建登录日志
-// @Summary 创建登录日志
-// @Description 创建登录日志
-// @Tags 登录模块
-// @Security ApiKeyAuth
-// @Accept json
-// @Produce json
-// @Param data body domains.LoginLog true "登录日志对象"
-// @Success 200 {object} response.Response{data=bool,msg=string}
-// @Router /log [post]
+// Save 直接写入登录日志；默认路由未注册此方法。
+//
+// 常规登录、登出日志由 LoginLogger 中间件自动记录。宿主如需手动挂载，
+// 应自行定义路由及鉴权范围；此处不声明 Swagger 路由，避免生成不存在的接口。
 func (i LoginLogApi) Save(c *gin.Context) {
 	var entity domains.LoginLog
 	err := c.ShouldBindJSON(&entity)
@@ -42,16 +36,18 @@ func (i LoginLogApi) Save(c *gin.Context) {
 	response.Ok(true, c)
 }
 
-// DeleteByGuid 根据guid删除登录日志
-// @Summary 根据登录日志guid删除登录日志
-// @Description 根据登录日志guid删除登录日志
-// @Tags 登录模块
+// DeleteByGuid 删除登录日志。
+//
+// @Summary 删除登录日志
+// @Description 需要登录及接口权限，按 GUID 软删除指定日志。处理器本身不额外按企业过滤，宿主应限制此管理接口的授权范围。
+// @Tags 登录日志
 // @Security ApiKeyAuth
-// @Accept json
 // @Produce json
-// @Param guid path string true "登录日志guid"
-// @Success 200 {object} response.Response{data=bool,msg=string}
-// @Router /log/{guid} [delete]
+// @Param guid path string true "记录 GUID"
+// @Success 200 {object} response.Response{data=bool} "成功时 code=200；业务失败时 code=400，原因见 msg"
+// @Failure 401 {object} response.Response "未登录、令牌过期或会话已失效"
+// @Failure 403 {object} response.Response "无接口权限或不满足所需管理员身份"
+// @Router /login/log/{guid} [delete]
 func (i LoginLogApi) DeleteByGuid(c *gin.Context) {
 	guid := c.Param("guid")
 	err := loginLogService.DeleteByGuid(guid)
@@ -63,16 +59,18 @@ func (i LoginLogApi) DeleteByGuid(c *gin.Context) {
 	response.Ok(true, c)
 }
 
-// GetByGuid 获取登录日志信息
-// @Summary 根据登录日志guid获取登录日志
-// @Description 根据登录日志guid获取登录日志
-// @Tags 登录模块
+// GetByGuid 查询登录日志详情。
+//
+// @Summary 查询登录日志详情
+// @Description 需要登录及接口权限，按 GUID 查询日志；记录不存在时 data 为 null。处理器本身不额外按企业过滤，宿主应限制此管理接口的授权范围。
+// @Tags 登录日志
 // @Security ApiKeyAuth
-// @Accept json
 // @Produce json
-// @Param guid path string true "登录日志guid"
-// @Success 200 {object} response.Response{data=domains.SysLog,msg=string}
-// @Router /log/{guid} [get]
+// @Param guid path string true "记录 GUID"
+// @Success 200 {object} response.Response{data=domains.LoginLog} "成功时 code=200；业务失败时 code=400，原因见 msg"
+// @Failure 401 {object} response.Response "未登录、令牌过期或会话已失效"
+// @Failure 403 {object} response.Response "无接口权限或不满足所需管理员身份"
+// @Router /login/log/{guid} [get]
 func (i LoginLogApi) GetByGuid(c *gin.Context) {
 	guid := c.Param("guid")
 	t, err := loginLogService.GetByGuid(guid)
@@ -84,16 +82,22 @@ func (i LoginLogApi) GetByGuid(c *gin.Context) {
 	response.Ok(t, c)
 }
 
-// List 分页获取登录日志列表
-// @Summary 分页获取登录日志列表
-// @Description 分页获取登录日志列表
-// @Tags 登录模块
+// List 分页查询登录日志。
+//
+// @Summary 分页查询登录日志
+// @Description 需要登录及接口权限，默认按创建顺序倒序，支持 asc/desc 指定模型字段排序；page、size 必须提供非零值。处理器本身不额外按企业过滤。
+// @Description 当前登录日志模型没有 operation 字段，请勿传入 content 搜索参数；此接口目前只支持分页与排序。
+// @Tags 登录日志
 // @Security ApiKeyAuth
-// @Accept json
 // @Produce json
-// @Param data  query domains.PageInfo true  "页码, 每页大小"
-// @Success 200  {object}  response.Response{data=domains.PageResult,msg=string}  "分页获取登录日志列表,返回包括列表,总数,页码,每页数量"
-// @Router /log/list [get]
+// @Param page query int true "页码，从 1 开始" default(1)
+// @Param size query int true "每页条数，最多 100 条" default(10)
+// @Param asc query string false "按指定模型字段升序；只允许模型字段名或列名"
+// @Param desc query string false "按指定模型字段降序；与 asc 同传时优先使用 desc"
+// @Success 200 {object} response.Response{data=domains.PageResult{data=[]domains.LoginLog}} "成功时 code=200；业务失败时 code=400，原因见 msg"
+// @Failure 401 {object} response.Response "未登录、令牌过期或会话已失效"
+// @Failure 403 {object} response.Response "无接口权限或不满足所需管理员身份"
+// @Router /login/log/list [get]
 func (i LoginLogApi) List(c *gin.Context) {
 	var pageInfo domains.PageInfo
 	err := c.ShouldBindQuery(&pageInfo)

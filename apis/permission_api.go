@@ -14,15 +14,19 @@ import (
 
 type PermissionApi struct{}
 
-// Save 创建或更新系统权限
-// @Summary 创建或更新系统权限
-// @Description 创建或更新系统权限
-// @Tags 系统模块
+// Save 创建或更新权限定义。
+//
+// @Summary 创建或更新权限定义
+// @Description 仅平台管理员可操作。guid 为空时创建，否则按 GUID 保存；name、code 必填，code 全局唯一。
+// @Description type 省略默认 api，API 权限须提供 path；method 省略表示任意方法。scope 区分 platform/company，dependencies 引用权限编码。保存后刷新权限缓存。
+// @Tags 权限管理
 // @Security ApiKeyAuth
 // @Accept json
 // @Produce json
-// @Param data body domains.SysPermission true "系统权限对象"
-// @Success 200 {object} response.Response{data=bool,msg=string}
+// @Param data body domains.SysPermission true "权限定义与依赖"
+// @Success 200 {object} response.Response{data=bool} "成功时 code=200；业务失败时 code=400，原因见 msg"
+// @Failure 401 {object} response.Response "未登录、令牌过期或会话已失效"
+// @Failure 403 {object} response.Response "无接口权限或不满足所需管理员身份"
 // @Router /permission [post]
 // @Router /permission [put]
 func (i PermissionApi) Save(c *gin.Context) {
@@ -45,15 +49,17 @@ func (i PermissionApi) Save(c *gin.Context) {
 	response.Ok(true, c)
 }
 
-// DeleteByGuid 根据guid删除系统权限
-// @Summary 根据guid删除系统权限
-// @Description 根据guid删除系统权限
-// @Tags 系统模块
+// DeleteByGuid 删除权限定义。
+//
+// @Summary 删除权限定义
+// @Description 仅平台管理员可操作。删除角色与该权限的关联，再软删除权限定义，成功后刷新权限缓存。
+// @Tags 权限管理
 // @Security ApiKeyAuth
-// @Accept json
 // @Produce json
-// @Param guid path string true "系统权限guid"
-// @Success 200 {object} response.Response{data=bool,msg=string}
+// @Param guid path string true "记录 GUID"
+// @Success 200 {object} response.Response{data=bool} "成功时 code=200；业务失败时 code=400，原因见 msg"
+// @Failure 401 {object} response.Response "未登录、令牌过期或会话已失效"
+// @Failure 403 {object} response.Response "无接口权限或不满足所需管理员身份"
 // @Router /permission/{guid} [delete]
 func (i PermissionApi) DeleteByGuid(c *gin.Context) {
 	if !platformOnly(c) {
@@ -71,15 +77,21 @@ func (i PermissionApi) DeleteByGuid(c *gin.Context) {
 	response.Ok(true, c)
 }
 
-// List 分页获取系统权限列表
-// @Summary 分页获取系统权限列表
-// @Description 分页获取系统权限列表
-// @Tags 系统模块
+// List 分页查询权限定义。
+//
+// @Summary 分页查询权限定义
+// @Description 平台管理员可查询全部权限；企业用户仅查询 scope=company 且 enabled=true 的权限。默认按创建顺序倒序，可用 asc/desc 指定模型字段排序。
+// @Tags 权限管理
 // @Security ApiKeyAuth
-// @Accept json
 // @Produce json
-// @Param data query domains.PageInfo true "页码, 每页大小"
-// @Success 200 {object} response.Response{data=domains.PageResult,msg=string}
+// @Param page query int true "页码，从 1 开始" default(1)
+// @Param size query int true "每页条数，最多 100 条" default(10)
+// @Param content query string false "模糊搜索：名称 name、编码 code、路径 path、方法 method"
+// @Param asc query string false "按指定模型字段升序；只允许模型字段名或列名"
+// @Param desc query string false "按指定模型字段降序；与 asc 同传时优先使用 desc"
+// @Success 200 {object} response.Response{data=domains.PageResult{data=[]domains.SysPermission}} "成功时 code=200；业务失败时 code=400，原因见 msg"
+// @Failure 401 {object} response.Response "未登录、令牌过期或会话已失效"
+// @Failure 403 {object} response.Response "无接口权限或不满足所需管理员身份"
 // @Router /permission/list [get]
 func (i PermissionApi) List(c *gin.Context) {
 	var pageInfo domains.PageInfo
@@ -106,14 +118,24 @@ func (i PermissionApi) List(c *gin.Context) {
 	}, c)
 }
 
-// ListAll 获取所有权限列表
-// @Summary 获取所有权限列表
-// @Description 获取所有权限列表
-// @Tags 系统模块
+// ListAll 按字段查询权限列表。
+//
+// @Summary 按字段查询权限列表
+// @Description 不分页。平台管理员可查询全部权限；企业用户仅查询已启用的企业权限。
+// @Description 支持通过模型字段进行等值筛选，例如 code、type、scope、enabled、parentGuid、path、method；每个查询键取第一个值，多条件按 AND 组合，未知字段返回业务失败。
+// @Tags 权限管理
 // @Security ApiKeyAuth
-// @Accept json
 // @Produce json
-// @Success 200 {object} response.Response{data=[]domains.SysPermission,msg=string}
+// @Param code query string false "权限编码，等值匹配"
+// @Param type query string false "权限类型" Enums(api,menu,button)
+// @Param scope query string false "权限范围" Enums(platform,company)
+// @Param enabled query bool false "是否启用"
+// @Param parentGuid query string false "父级权限 GUID"
+// @Param path query string false "API 路径或前端路由，等值匹配"
+// @Param method query string false "HTTP 方法或 *，等值匹配"
+// @Success 200 {object} response.Response{data=[]domains.SysPermission} "成功时 code=200；业务失败时 code=400，原因见 msg"
+// @Failure 401 {object} response.Response "未登录、令牌过期或会话已失效"
+// @Failure 403 {object} response.Response "无接口权限或不满足所需管理员身份"
 // @Router /permission/list/all [get]
 func (i PermissionApi) ListAll(c *gin.Context) {
 	query := c.Request.URL.Query()

@@ -18,6 +18,7 @@ type AccessContext struct {
 }
 
 func (a *AccessContext) PlatformAdmin() bool { return a != nil && a.User.PlatformAdmin() }
+
 func (a *AccessContext) Has(code string) bool {
 	if a.PlatformAdmin() {
 		return true
@@ -32,6 +33,7 @@ func (a *AccessContext) Has(code string) bool {
 	}
 	return false
 }
+
 func (a *AccessContext) CompanyAdmin() bool {
 	if a.PlatformAdmin() {
 		return true
@@ -46,12 +48,14 @@ func (a *AccessContext) CompanyAdmin() bool {
 	}
 	return false
 }
+
 func RequestAccess(c *gin.Context) *AccessContext {
 	if v, ok := c.Get("access"); ok {
 		return v.(*AccessContext)
 	}
 	return nil
 }
+
 func LoadAccess(db *gorm.DB, guid string) (*AccessContext, error) {
 	a := &AccessContext{}
 	if err := db.Where("guid = ?", guid).First(&a.User).Error; err != nil {
@@ -81,7 +85,7 @@ func LoadAccess(db *gorm.DB, guid string) (*AccessContext, error) {
 	if err := db.Model(&domains.SysRole{}).Joins("JOIN sys_user_role ur ON ur.role_guid = sys_role.guid").Where("ur.user_guid = ? AND sys_role.company_guid = ? AND sys_role.enabled = ?", guid, a.User.CompanyGuid, true).Find(&a.Roles).Error; err != nil {
 		return nil, err
 	}
-	guids := []string{}
+	var guids []string
 	for _, role := range a.Roles {
 		guids = append(guids, role.Guid)
 		a.User.RoleGuidList = append(a.User.RoleGuidList, role.Guid)
@@ -100,6 +104,7 @@ func LoadAccess(db *gorm.DB, guid string) (*AccessContext, error) {
 	a.User.Abilities = a.User.AbilityList
 	return a, nil
 }
+
 func AccessDB(c *gin.Context, model any) *gorm.DB {
 	db := global.NAV_DB.WithContext(c.Request.Context()).Model(model)
 	a := RequestAccess(c)
@@ -114,9 +119,11 @@ func AccessDB(c *gin.Context, model any) *gorm.DB {
 	}
 	return db.Where("company_guid = ?", a.User.CompanyGuid)
 }
+
 func TargetCompany(a *AccessContext, requested string) (string, error) {
 	return targetCompanyDB(global.NAV_DB, a, requested)
 }
+
 func targetCompanyDB(db *gorm.DB, a *AccessContext, requested string) (string, error) {
 	if a == nil {
 		return "", errors.New("未登录")
