@@ -6,6 +6,8 @@ The foundation owns `sys_menu` and normalized `sys_role_menu` relations. Menu re
 
 Role details use `POST /role`. Roles are scoped to one company, codes are unique within that company, and administrator identity is never assignable through role codes. Role details and role authorization are independent mutations.
 
+User list, detail and current-session responses include `roleNameList` for display alongside `roleGuidList` and `roleCodeList`. Names come from the assigned roles in the user's company, including custom role names; permission checks continue using stable codes. The built-in platform administrator displays as `平台超级管理员`.
+
 `GET /role/:guid/authorization` returns the role, company name, complete menu catalog, registered business actions, selected menus and effective permissions. Each menu includes `assignable`, `defaultVisible` and `restrictionReason`; clients use these fields for interaction restrictions.
 
 `PUT /role/:guid/authorization` accepts only `menuKeys` and `permissionGuids`. The service checks the actor, company scope, registered targets, required identities and exact allowed actions. It adds menu read permissions, expands dependencies and APIs, and replaces both permission and menu relations in one transaction. Ordinary roles cannot receive platform menus, identity-only administration menus or arbitrary API permissions. Saving authorization never changes role details.

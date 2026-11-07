@@ -70,7 +70,7 @@ func (UserApi) DeleteByGuid(c *gin.Context) {
 // GetByGuid 查询用户详情。
 //
 // @Summary 查询用户详情
-// @Description 按企业范围查询用户，并补充 roleGuidList、roleCodeList；密码和盐不会序列化返回。平台管理员可通过 companyGuid 进一步限定企业。
+// @Description 按企业范围查询用户，并补充 roleGuidList、roleCodeList、roleNameList；密码和盐不会序列化返回。平台管理员可通过 companyGuid 进一步限定企业。
 // @Tags 用户管理
 // @Security ApiKeyAuth
 // @Produce json
@@ -104,6 +104,10 @@ func populateUsersRoles(db *gorm.DB, users []domains.SysUser) error {
 	for i := range users {
 		user := &users[i]
 		user.RoleGuidList, user.RoleCodeList = []string{}, []string{}
+		user.RoleNameList = []string{}
+		if user.PlatformAdmin() {
+			user.RoleNameList = []string{"平台超级管理员"}
+		}
 		guids = append(guids, user.Guid)
 		byGuid[user.Guid] = user
 	}
@@ -125,6 +129,7 @@ func populateUsersRoles(db *gorm.DB, users []domains.SysUser) error {
 		if user := byGuid[item.AssignedUserGuid]; user != nil {
 			user.RoleGuidList = append(user.RoleGuidList, item.Guid)
 			user.RoleCodeList = append(user.RoleCodeList, item.Code)
+			user.RoleNameList = append(user.RoleNameList, item.Name)
 		}
 	}
 	return nil
@@ -133,7 +138,7 @@ func populateUsersRoles(db *gorm.DB, users []domains.SysUser) error {
 // List 分页查询用户。
 //
 // @Summary 分页查询用户
-// @Description 企业用户仅查询所属企业，平台管理员可查询全部或指定企业。按创建顺序倒序返回，批量补充用户角色 GUID 与编码；不支持自定义排序。
+// @Description 企业用户仅查询所属企业，平台管理员可查询全部或指定企业。按创建顺序倒序返回，批量补充用户角色 GUID、编码与名称；不支持自定义排序。
 // @Tags 用户管理
 // @Security ApiKeyAuth
 // @Produce json

@@ -69,6 +69,7 @@ func LoadAccess(db *gorm.DB, guid string) (*AccessContext, error) {
 	if a.PlatformAdmin() {
 		a.User.DataScope = "all"
 		a.User.RoleCodeList = []string{"SUPER_ADMIN"}
+		a.User.RoleNameList = []string{"平台超级管理员"}
 		return a, nil
 	}
 	if a.User.CompanyGuid == "" {
@@ -90,6 +91,7 @@ func LoadAccess(db *gorm.DB, guid string) (*AccessContext, error) {
 		guids = append(guids, role.Guid)
 		a.User.RoleGuidList = append(a.User.RoleGuidList, role.Guid)
 		a.User.RoleCodeList = append(a.User.RoleCodeList, role.Code)
+		a.User.RoleNameList = append(a.User.RoleNameList, role.Name)
 	}
 	if len(guids) > 0 {
 		if err := db.Model(&domains.SysPermission{}).Distinct("sys_permission.*").Joins("JOIN sys_role_permission rp ON rp.permission_guid = sys_permission.guid").Where("rp.role_guid IN ? AND sys_permission.enabled = ? AND sys_permission.scope = ?", guids, true, "company").Find(&a.Permissions).Error; err != nil {
