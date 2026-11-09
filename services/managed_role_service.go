@@ -12,17 +12,16 @@ import (
 )
 
 type ManagedRoleRequest struct {
-	Guid        string `json:"guid"`
-	CompanyGuid string `json:"companyGuid"`
-	Name        string `json:"name"`
-	Code        string `json:"code"`
-	Remark      string `json:"remark"`
-	Enabled     *bool  `json:"enabled"`
+	Guid    string `json:"guid"`
+	Name    string `json:"name"`
+	Code    string `json:"code"`
+	Remark  string `json:"remark"`
+	Enabled *bool  `json:"enabled"`
 }
 
 func managedRoleAccess(actor *AccessContext) error {
-	if actor == nil || !actor.CompanyAdmin() {
-		return errors.New("需要企业管理员权限")
+	if actor == nil || !actor.PlatformAdmin() {
+		return errors.New("仅平台管理员可管理全局角色")
 	}
 	return nil
 }
@@ -31,10 +30,7 @@ func (s *RoleService) GetManagedRole(actor *AccessContext, guid string) (domains
 	if err := managedRoleAccess(actor); err != nil {
 		return role, err
 	}
-	query := s.DB().Where("guid = ? AND company_guid <> ''", guid)
-	if !actor.PlatformAdmin() {
-		query = query.Where("company_guid = ?", actor.User.CompanyGuid)
-	}
+	query := s.DB().Where("guid = ? AND company_guid = '' AND code <> ?", guid, "SUPER_ADMIN")
 	err := query.First(&role).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		err = errors.New("角色不存在或无权访问")
@@ -46,27 +42,17 @@ func (s *RoleService) SaveManagedRole(actor *AccessContext, req ManagedRoleReque
 	if err := managedRoleAccess(actor); err != nil {
 		return saved, err
 	}
-	company, err := targetCompanyDB(s.DB(), actor, strings.TrimSpace(req.CompanyGuid))
-	if err != nil {
-		return saved, err
-	}
 	req.Name, req.Code, req.Remark = strings.TrimSpace(req.Name), strings.ToUpper(strings.TrimSpace(req.Code)), strings.TrimSpace(req.Remark)
 	if req.Name == "" || utf8.RuneCountInString(req.Name) > 50 || req.Code == "" || utf8.RuneCountInString(req.Code) > 50 || req.Code == "SUPER_ADMIN" || utf8.RuneCountInString(req.Remark) > 500 {
 		return saved, errors.New("请填写有效的角色名称、编码和备注")
 	}
-	err = s.DB().Transaction(func(tx *gorm.DB) error {
-		if err := lockCompanyIdentity(tx, company); err != nil {
-			return err
-		}
+	err := s.DB().Transaction(func(tx *gorm.DB) error {
 		role := domains.SysRole{}
 		if req.Guid != "" {
 			var err error
 			role, err = s.WithDB(tx.Clauses(clause.Locking{Strength: "UPDATE"})).GetManagedRole(actor, req.Guid)
 			if err != nil {
 				return err
-			}
-			if role.CompanyGuid != company {
-				return errors.New("角色企业归属不可修改")
 			}
 		} else {
 			if req.Code == "COMPANY_ADMIN" {
@@ -84,13 +70,13 @@ func (s *RoleService) SaveManagedRole(actor *AccessContext, req ManagedRoleReque
 			return errors.New("不能停用企业管理员角色")
 		}
 		var count int64
-		if err := tx.Unscoped().Model(&domains.SysRole{}).Where("company_guid = ? AND code = ? AND guid <> ?", company, req.Code, role.Guid).Count(&count).Error; err != nil {
+		if err := tx.Unscoped().Model(&domains.SysRole{}).Where("company_guid = '' AND code = ? AND guid <> ?", req.Code, role.Guid).Count(&count).Error; err != nil {
 			return err
 		}
 		if count > 0 {
-			return errors.New("本企业角色编码已存在")
+			return errors.New("角色编码已存在")
 		}
-		role.CompanyGuid, role.Name, role.Code, role.Remark = company, req.Name, req.Code, req.Remark
+		role.CompanyGuid, role.Name, role.Code, role.Remark = "", req.Name, req.Code, req.Remark
 		if req.Enabled != nil {
 			role.Enabled = *req.Enabled
 		}
@@ -109,14 +95,7 @@ func (s *RoleService) SaveManagedRole(actor *AccessContext, req ManagedRoleReque
 }
 func (s *RoleService) DeleteManagedRole(actor *AccessContext, guid string) error {
 	return s.DB().Transaction(func(tx *gorm.DB) error {
-		role, err := s.WithDB(tx).GetManagedRole(actor, guid)
-		if err != nil {
-			return err
-		}
-		if err := lockCompanyIdentity(tx, role.CompanyGuid); err != nil {
-			return err
-		}
-		role, err = s.WithDB(tx.Clauses(clause.Locking{Strength: "UPDATE"})).GetManagedRole(actor, guid)
+		role, err := s.WithDB(tx.Clauses(clause.Locking{Strength: "UPDATE"})).GetManagedRole(actor, guid)
 		if err != nil {
 			return err
 		}

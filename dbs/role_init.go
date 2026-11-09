@@ -56,9 +56,10 @@ func (i *initRole) InitializeData(ctx context.Context) (context.Context, error) 
 		return ctx, ErrMissingDBContext
 	}
 	entities := []domains.SysRole{
-		{BaseDataEntity: domains.BaseDataEntity{Guid: "9a9ed1e6a5a334461b263e5a80207cc6"}, Name: "超级管理员", Code: "SUPER_ADMIN", Sort: 1, Remark: "超级管理员"},
-		{BaseDataEntity: domains.BaseDataEntity{Guid: "2a9ed1e6a5a334461b263e5a80207cc1"}, Name: "企业管理员", Code: "COMPANY_ADMIN", Sort: 2, Remark: "企业管理员"},
-		{BaseDataEntity: domains.BaseDataEntity{Guid: "3a9ed1e6a5a334461b263e5a80207cc3"}, Name: "普通用户", Code: "USER", Sort: 3, Remark: "普通用户"},
+		{BaseDataEntity: domains.BaseDataEntity{Guid: "9a9ed1e6a5a334461b263e5a80207cc6"}, Name: "超级管理员", Code: "SUPER_ADMIN", BuiltIn: true, Sort: 1, Remark: "超级管理员"},
+		{BaseDataEntity: domains.BaseDataEntity{Guid: "2a9ed1e6a5a334461b263e5a80207cc1"}, Name: "企业管理员", Code: "COMPANY_ADMIN", BuiltIn: true, Sort: 2, Remark: "企业管理员"},
+		{BaseDataEntity: domains.BaseDataEntity{Guid: "4a9ed1e6a5a334461b263e5a80207cc4"}, Name: "运维人员", Code: "OPERATOR", BuiltIn: true, Sort: 3, Remark: "运维人员"},
+		{BaseDataEntity: domains.BaseDataEntity{Guid: "5a9ed1e6a5a334461b263e5a80207cc5"}, Name: "只读人员", Code: "VIEWER", BuiltIn: true, Sort: 4, Remark: "只读人员"},
 	}
 	if err := db.Create(&entities).Error; err != nil {
 		return ctx, fmt.Errorf("%s表数据初始化失败: %w", domains.SysRole{}.TableName(), err)

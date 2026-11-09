@@ -162,6 +162,16 @@ func CasbinHandler() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+		// Global roles are managed centrally; company admins may only read the selector.
+		if urlPath == "/role" || strings.HasPrefix(urlPath, "/role/") {
+			if method == "GET" && urlPath == "/role/list/all" && a.CompanyAdmin() {
+				c.Next()
+				return
+			}
+			response.NoPermission("仅平台管理员可管理全局角色", c)
+			c.Abort()
+			return
+		}
 		// System administration cannot be delegated through a forged role code or API wildcard.
 		if strings.HasPrefix(urlPath, "/company") || strings.HasPrefix(urlPath, "/user") || strings.HasPrefix(urlPath, "/role") || strings.HasPrefix(urlPath, "/permission") {
 			if !a.CompanyAdmin() {

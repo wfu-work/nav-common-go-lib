@@ -30,7 +30,7 @@ func accessReply(c *gin.Context, v any, err error) {
 // @Summary 创建或更新企业用户
 // @Description 仅平台管理员或企业管理员可操作。guid 为空表示新建；平台管理员必须指定 companyGuid，企业管理员只能管理所属企业，已有用户不能转移企业。
 // @Description username 必填并全局唯一，自动去除首尾空格并转为小写，admin 为保留账号。新建必须提供经 POST /secret/encrypt 加密的 password，明文至少 8 位；更新省略 password 时不改密码。
-// @Description enable 为 0 或 1，省略时新建默认 1、更新保留原值。roleGuidList 省略时保留角色，传空数组时清空，仅能分配本企业有效角色，且不能移除最后一位有效企业管理员。
+// @Description enable 为 0 或 1，省略时新建默认 1、更新保留原值。roleGuidList 省略时保留角色，传空数组时清空，仅能分配有效的全局角色，且不能移除最后一位有效企业管理员。
 // @Description 更新会提升账号会话版本，使旧令牌失效；内置 admin 不允许通过此接口修改。
 // @Tags 用户管理
 // @Security ApiKeyAuth
@@ -120,8 +120,8 @@ func populateUsersRoles(db *gorm.DB, users []domains.SysUser) error {
 	}
 	err := db.Model(&domains.SysRole{}).Select("sys_role.*, ur.user_guid AS assigned_user_guid").
 		Joins("JOIN sys_user_role ur ON ur.role_guid = sys_role.guid").
-		Joins("JOIN sys_user u ON u.guid = ur.user_guid AND u.company_guid = sys_role.company_guid AND u.deleted_time IS NULL").
-		Where("ur.user_guid IN ?", guids).Scan(&assigned).Error
+		Joins("JOIN sys_user u ON u.guid = ur.user_guid AND u.deleted_time IS NULL").
+		Where("ur.user_guid IN ? AND sys_role.company_guid = '' AND sys_role.code <> ?", guids, "SUPER_ADMIN").Scan(&assigned).Error
 	if err != nil {
 		return err
 	}
@@ -233,7 +233,7 @@ func (UserApi) UpdatePassword(c *gin.Context) {
 //
 // @Summary 替换用户角色分配
 // @Description 仅平台管理员或企业管理员可操作，企业管理员仅管理所属企业用户。roleGuids 为完整目标列表，传空数组或省略会清空角色。
-// @Description 仅允许本企业有效角色，禁止修改内置 admin 的平台身份，且须保留最后一位有效企业管理员；成功后用户旧会话失效。
+// @Description 仅允许有效的全局角色，禁止修改内置 admin 的平台身份，且须保留最后一位有效企业管理员；成功后用户旧会话失效。
 // @Description 请求示例：{"roleGuids":["角色GUID"]}。
 // @Tags 用户管理
 // @Security ApiKeyAuth

@@ -14,7 +14,6 @@ type RoleAuthorizationRequest struct {
 }
 type RoleAuthorizationData struct {
 	Role            domains.SysRole         `json:"role"`
-	CompanyName     string                  `json:"companyName"`
 	Menus           []NavigationMenuView    `json:"menus"`
 	Permissions     []domains.SysPermission `json:"permissions"`
 	MenuKeys        []string                `json:"menuKeys"`
@@ -29,11 +28,6 @@ func (s *NavigationService) RoleAuthorization(actor *AccessContext, guid string)
 			return err
 		}
 		result.Role = role
-		var company domains.SysCompany
-		if err := tx.Where("guid = ?", role.CompanyGuid).First(&company).Error; err != nil {
-			return err
-		}
-		result.CompanyName = company.Name
 		catalog, err := s.WithDB(tx).catalog()
 		if err != nil {
 			return err

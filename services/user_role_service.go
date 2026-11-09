@@ -35,9 +35,9 @@ func (s UserRoleService) GetByUserGuid(userGuid string) (*domains.SysRole, error
 	return role, err
 }
 
-// ListByUserGuid returns every active role belonging to the user's company.
+// ListByUserGuid returns every active global role assigned to the user.
 func (s UserRoleService) ListByUserGuid(userGuid string) ([]domains.SysRole, error) {
 	var roles []domains.SysRole
-	err := s.DB().Model(&domains.SysRole{}).Joins("JOIN sys_user_role ur ON ur.role_guid=sys_role.guid JOIN sys_user u ON u.guid=ur.user_guid").Where("u.guid = ? AND sys_role.company_guid=u.company_guid AND sys_role.enabled = ? AND u.deleted_time IS NULL", userGuid, true).Find(&roles).Error
+	err := s.DB().Model(&domains.SysRole{}).Joins("JOIN sys_user_role ur ON ur.role_guid=sys_role.guid JOIN sys_user u ON u.guid=ur.user_guid").Where("u.guid = ? AND sys_role.company_guid='' AND sys_role.code <> ? AND sys_role.enabled = ? AND u.deleted_time IS NULL", userGuid, "SUPER_ADMIN", true).Find(&roles).Error
 	return roles, err
 }

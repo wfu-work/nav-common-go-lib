@@ -12,45 +12,10 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func InitializeCompanyRoles(db *gorm.DB, company string) error {
-	for _, preset := range []struct{ code, name string }{{"COMPANY_ADMIN", "企业管理员"}, {"OPERATOR", "运维人员"}, {"VIEWER", "只读人员"}} {
-		var role domains.SysRole
-		err := db.Where("company_guid = ? AND code = ?", company, preset.code).First(&role).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			role = domains.SysRole{BaseDataEntity: domains.BaseDataEntity{Guid: uuid.NewString()}, CompanyGuid: company, Code: preset.code, Name: preset.name, Enabled: true, BuiltIn: true}
-			if err := db.Create(&role).Error; err != nil {
-				return err
-			}
-		} else if err != nil {
-			return err
-		}
-		if role.PermissionsInitialized {
-			continue
-		}
-		var permissions []domains.SysPermission
-		if err := db.Where("scope = ? AND enabled = ? AND type <> ?", "company", true, domains.PermissionTypeAPI).Find(&permissions).Error; err != nil {
-			return err
-		}
-		if len(permissions) == 0 {
-			continue
-		}
-		selected := []string{}
-		for _, p := range permissions {
-			if (strings.HasPrefix(p.Code, "user.") || strings.HasPrefix(p.Code, "role.")) && preset.code != "COMPANY_ADMIN" {
-				continue
-			}
-			if preset.code != "VIEWER" || p.Type == domains.PermissionTypeMenu || strings.HasSuffix(p.Code, ".read") || strings.HasSuffix(p.Code, ".download") {
-				selected = append(selected, p.Guid)
-			}
-		}
-		if err := PermissionServiceApp.WithDB(db).SetRolePermissions(role.Guid, selected); err != nil {
-			return err
-		}
-		if err := db.Model(&role).UpdateColumn("permissions_initialized", true).Error; err != nil {
-			return err
-		}
-	}
-	return initializeRegisteredRoleMenus(db, company)
+// InitializeCompanyRoles is retained for hosts using the former company API.
+// Role definitions and defaults are shared globally.
+func InitializeCompanyRoles(db *gorm.DB, _ string) error {
+	return InitializeGlobalRoles(db)
 }
 
 type UserSaveRequest struct {
@@ -175,11 +140,11 @@ func setUserRoles(tx *gorm.DB, u domains.SysUser, guids []string) error {
 	guids = normalizeGuidList(guids)
 	var roles []domains.SysRole
 	if len(guids) > 0 {
-		if err := tx.Where("guid IN ? AND company_guid = ? AND enabled = ?", guids, u.CompanyGuid, true).Find(&roles).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("guid IN ? AND company_guid = '' AND code <> ? AND enabled = ?", guids, "SUPER_ADMIN", true).Find(&roles).Error; err != nil {
 			return err
 		}
 		if len(roles) != len(guids) {
-			return errors.New("只能分配本企业的有效角色")
+			return errors.New("只能分配有效的全局角色")
 		}
 	}
 	if err := tx.Where("user_guid = ?", u.Guid).Delete(&domains.SysUserRole{}).Error; err != nil {
@@ -197,7 +162,7 @@ func setUserRoles(tx *gorm.DB, u domains.SysUser, guids []string) error {
 }
 func ensureCompanyAdmin(tx *gorm.DB, company string) error {
 	var n int64
-	err := tx.Model(&domains.SysUser{}).Joins("JOIN sys_user_role ur ON ur.user_guid=sys_user.guid JOIN sys_role r ON r.guid=ur.role_guid").Where("sys_user.company_guid = ? AND sys_user.enable=1 AND r.company_guid = ? AND r.code = ? AND r.built_in = ? AND r.enabled = ? AND r.deleted_time IS NULL", company, company, "COMPANY_ADMIN", true, true).Count(&n).Error
+	err := tx.Model(&domains.SysUser{}).Joins("JOIN sys_user_role ur ON ur.user_guid=sys_user.guid JOIN sys_role r ON r.guid=ur.role_guid").Where("sys_user.company_guid = ? AND sys_user.enable=1 AND r.company_guid = '' AND r.code = ? AND r.built_in = ? AND r.enabled = ? AND r.deleted_time IS NULL", company, "COMPANY_ADMIN", true, true).Count(&n).Error
 	if err != nil {
 		return err
 	}

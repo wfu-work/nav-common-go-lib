@@ -203,7 +203,7 @@ func (s *NavigationService) Catalog(actor *AccessContext) (NavigationCatalog, er
 func roleTargetRestriction(role domains.SysRole, target NavigationTarget) string {
 	switch target.RequiredIdentity {
 	case NavigationPlatformAdmin:
-		return "平台专用 · admin，企业角色不可授权"
+		return "平台专用 · admin，普通角色不可授权"
 	case NavigationCompanyAdmin:
 		if !role.BuiltIn || role.Code != "COMPANY_ADMIN" {
 			return "企业管理员专用"
@@ -239,10 +239,10 @@ func targetGranted(role domains.SysRole, permissions []domains.SysPermission, ta
 }
 
 // InitializeRoleMenus seeds built-in roles once. Explicit empty grants stay empty.
-func (s *NavigationService) InitializeRoleMenus(company string) error {
+func (s *NavigationService) InitializeRoleMenus(_ string) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		roles := []domains.SysRole{}
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("company_guid = ? AND built_in = ? AND menus_initialized = ? AND permissions_initialized = ?", company, true, false, true).Find(&roles).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("company_guid = '' AND code <> ? AND built_in = ? AND menus_initialized = ? AND permissions_initialized = ?", "SUPER_ADMIN", true, false, true).Find(&roles).Error; err != nil {
 			return err
 		}
 		nodes, err := s.WithDB(tx).nodes()
@@ -293,13 +293,13 @@ func (s *NavigationService) Navigation(actor *AccessContext) ([]NavigationSectio
 	if !actor.PlatformAdmin() {
 		ids := []string{}
 		for _, r := range actor.Roles {
-			if r.Enabled && r.CompanyGuid == actor.User.CompanyGuid {
+			if r.Enabled && r.CompanyGuid == "" && r.Code != "SUPER_ADMIN" {
 				ids = append(ids, r.Guid)
 			}
 		}
 		if len(ids) > 0 {
 			rows := []domains.SysRoleMenu{}
-			if err := s.db.Model(&domains.SysRoleMenu{}).Joins("JOIN sys_role r ON r.guid = sys_role_menu.role_guid").Where("role_guid IN ? AND r.company_guid = ? AND r.enabled = ? AND r.deleted_time IS NULL", ids, actor.User.CompanyGuid, true).Find(&rows).Error; err != nil {
+			if err := s.db.Model(&domains.SysRoleMenu{}).Joins("JOIN sys_role r ON r.guid = sys_role_menu.role_guid").Where("role_guid IN ? AND r.company_guid = '' AND r.code <> ? AND r.enabled = ? AND r.deleted_time IS NULL", ids, "SUPER_ADMIN", true).Find(&rows).Error; err != nil {
 				return nil, err
 			}
 			for _, row := range rows {

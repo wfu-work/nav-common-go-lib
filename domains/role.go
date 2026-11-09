@@ -2,7 +2,8 @@ package domains
 
 type SysRole struct {
 	BaseDataEntity
-	CompanyGuid            string `json:"companyGuid" gorm:"size:50;uniqueIndex:idx_company_role_code;index"`
+	// CompanyGuid is retained only to migrate legacy company roles. Active roles are global.
+	CompanyGuid            string `json:"-" gorm:"size:50;uniqueIndex:idx_company_role_code;index"`
 	Enabled                bool   `json:"enabled" gorm:"default:true"`
 	MenusInitialized       bool   `json:"-"`
 	PermissionsInitialized bool   `json:"-"`

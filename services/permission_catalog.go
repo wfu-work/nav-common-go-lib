@@ -80,7 +80,7 @@ func (s *PermissionService) RefreshRoleGrants() error {
 			}
 			ids := []string{}
 			for _, p := range grants {
-				if p.Enabled && p.Type != domains.PermissionTypeAPI && (role.CompanyGuid == "" || p.Scope == "company") {
+				if p.Enabled && p.Type != domains.PermissionTypeAPI && (role.Code == "SUPER_ADMIN" || p.Scope == "company") {
 					ids = append(ids, p.Guid)
 				}
 			}

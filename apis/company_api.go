@@ -87,7 +87,7 @@ func (CompanyApi) Save(c *gin.Context) {
 			return err
 		}
 		id = company.Guid
-		if err := services.InitializeCompanyRoles(tx, company.Guid); err != nil {
+		if err := services.InitializeGlobalRoles(tx); err != nil {
 			return err
 		}
 		if fresh {
@@ -115,7 +115,7 @@ func (CompanyApi) Save(c *gin.Context) {
 				return err
 			}
 			var role domains.SysRole
-			if err := tx.Where("company_guid = ? AND code = ?", company.Guid, "COMPANY_ADMIN").First(&role).Error; err != nil {
+			if err := tx.Where("company_guid = '' AND code = ?", "COMPANY_ADMIN").First(&role).Error; err != nil {
 				return err
 			}
 			return tx.Create(&domains.SysUserRole{UserGuid: u.Guid, RoleGuid: role.Guid}).Error

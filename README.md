@@ -304,11 +304,11 @@ companySvc := services.CompanyServiceApp.WithDB(tx)
 
 ## 企业与角色权限
 
-平台身份只属于固定 GUID 的内置 `admin` 账号，所有权限及企业数据均可访问；`SUPER_ADMIN` 角色编码不能赋予平台身份。企业用户必须归属企业，用户角色只能来自同一企业。企业角色权限仅允许 `scope=company` 的权限点。菜单/按钮可通过 `dependencies` 声明依赖，其下 API 权限在保存授权时自动展开。
+平台身份只属于固定 GUID 的内置 `admin` 账号，所有权限及企业数据均可访问；`SUPER_ADMIN` 角色编码不能赋予平台身份。企业用户必须归属企业，各企业用户共用全局角色，角色管理与菜单授权仅由平台管理员维护，企业管理员可以为本企业用户分配全局角色。普通角色权限仅允许 `scope=company` 的权限点。菜单/按钮可通过 `dependencies` 声明依赖，其下 API 权限在保存授权时自动展开。
 
-嵌入宿主在表结构及种子数据初始化完成、业务权限目录注册后，对各企业调用 `InitializeCompanyRoles` 完成预置角色授权。系统直接使用当前企业身份模型，不执行历史账号、角色或索引迁移；用户名包含已删除账号在内全局唯一，不允许复用。
+嵌入宿主在表结构及种子数据初始化完成、业务权限目录注册后，调用 `InitializeGlobalRoles` 完成角色升级与预置授权；旧 `InitializeCompanyRoles` 接口仍可调用，但只初始化全局角色。重复的启用内置角色会合并并转接用户关联，优先保留已配置的全局角色，否则采用最早已配置的旧角色，权限不会取并集；同编码自定义角色与停用角色保留原授权并调整冲突编码。用户企业归属继续生效；用户名包含已删除账号在内全局唯一，不允许复用。
 
-`POST /company` 创建企业时，同时提交 `adminUsername` 和经 `/secret/encrypt` 加密的 `adminPassword`；企业、预置角色、初始管理员在同一事务创建。`POST /user` 支持 `roleGuidList`，也可通过 `PUT /user/:guid/roles` 单独分配。`GET /user/token` 返回 `company` 摘要、`abilityList`、`isPlatformAdmin`、`isCompanyAdmin` 和 `dataScope`。`PUT /company/current` 只修改当前企业允许编辑的资料。
+`POST /company` 创建企业时，同时提交 `adminUsername` 和经 `/secret/encrypt` 加密的 `adminPassword`；企业与初始管理员在同一事务创建，初始管理员复用全局企业管理员角色。`POST /user` 支持 `roleGuidList`，也可通过 `PUT /user/:guid/roles` 单独分配。`GET /user/token` 返回 `company` 摘要、`abilityList`、`isPlatformAdmin`、`isCompanyAdmin` 和 `dataScope`。`PUT /company/current` 只修改当前企业允许编辑的资料。
 
 每次请求重新检查用户、企业、当前角色和授权版本。保存账号、修改角色分配、修改密码或退出登录后，旧会话失效。内置 admin 与最后一位企业管理员受到保护。企业删除接口保留数据并拒绝删除，应使用停用功能。
 

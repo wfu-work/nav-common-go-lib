@@ -110,8 +110,8 @@ func (s *PermissionService) SetRolePermissions(roleGuid string, permissionGuids 
 		if !ok {
 			return errors.New("权限不存在或已停用")
 		}
-		if role.CompanyGuid != "" && p.Scope != "company" {
-			return errors.New("企业角色不能授予平台权限")
+		if role.Code != "SUPER_ADMIN" && p.Scope != "company" {
+			return errors.New("普通角色不能授予平台权限")
 		}
 		selected[id] = true
 		for _, code := range p.Dependencies {
@@ -124,7 +124,7 @@ func (s *PermissionService) SetRolePermissions(roleGuid string, permissionGuids 
 			}
 		}
 		for _, child := range children[id] {
-			if role.CompanyGuid != "" && byGuid[child].Scope != "company" {
+			if role.Code != "SUPER_ADMIN" && byGuid[child].Scope != "company" {
 				continue
 			}
 			if err := add(child); err != nil {
@@ -191,7 +191,7 @@ func (s *PermissionService) RolePermissionPolicies() ([]RolePermissionPolicy, er
 		Select("rp.role_guid AS role_guid, p.path AS path, p.method AS method").
 		Joins("JOIN "+domains.SysPermission{}.TableName()+" AS p ON p.guid = rp.permission_guid").
 		Joins("JOIN sys_role r ON r.guid = rp.role_guid").
-		Where("p.enabled = ? AND p.type = ? AND p.path <> ? AND p.deleted_time IS NULL AND r.deleted_time IS NULL AND r.enabled = ? AND (r.company_guid = ? OR p.scope = ?)", true, domains.PermissionTypeAPI, "", true, "", "company").
+		Where("p.enabled = ? AND p.type = ? AND p.path <> ? AND p.deleted_time IS NULL AND r.deleted_time IS NULL AND r.enabled = ? AND (r.code = ? OR p.scope = ?) AND r.company_guid = ''", true, domains.PermissionTypeAPI, "", true, "SUPER_ADMIN", "company").
 		Find(&policies).Error
 	for i := range policies {
 		policies[i].Path = normalizePermissionPath(policies[i].Path)

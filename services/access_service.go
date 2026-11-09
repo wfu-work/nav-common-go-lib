@@ -42,7 +42,7 @@ func (a *AccessContext) CompanyAdmin() bool {
 		return false
 	}
 	for _, r := range a.Roles {
-		if r.BuiltIn && r.Code == "COMPANY_ADMIN" && r.CompanyGuid == a.User.CompanyGuid {
+		if r.Enabled && r.BuiltIn && r.Code == "COMPANY_ADMIN" && r.CompanyGuid == "" {
 			return true
 		}
 	}
@@ -83,7 +83,7 @@ func LoadAccess(db *gorm.DB, guid string) (*AccessContext, error) {
 		return nil, errors.New("企业未启用或已到期")
 	}
 	a.User.Company = &domains.CompanySummary{Guid: company.Guid, Name: company.Name, Logo: company.Logo, Enabled: company.Enabled}
-	if err := db.Model(&domains.SysRole{}).Joins("JOIN sys_user_role ur ON ur.role_guid = sys_role.guid").Where("ur.user_guid = ? AND sys_role.company_guid = ? AND sys_role.enabled = ?", guid, a.User.CompanyGuid, true).Find(&a.Roles).Error; err != nil {
+	if err := db.Model(&domains.SysRole{}).Joins("JOIN sys_user_role ur ON ur.role_guid = sys_role.guid").Where("ur.user_guid = ? AND sys_role.company_guid = '' AND sys_role.code <> ? AND sys_role.enabled = ?", guid, "SUPER_ADMIN", true).Find(&a.Roles).Error; err != nil {
 		return nil, err
 	}
 	var guids []string
