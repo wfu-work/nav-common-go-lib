@@ -186,6 +186,8 @@ zap:
 
 运行时使用 `global.Config()` 读取只读配置快照；需要修改时先 `Clone()`，由 `global.SetConfig()` 发布。请求中通过 `global.RequestConfig(c)` 获取本次请求固定的快照。原 `global.NAV_CONFIG` 仅保留启动输入用途，运行期间不要直接读写。扩展配置使用 `global.RegisterExtra(key, value)` 注册，注册后的值应保持不可变。
 
+SQLite 的 `path` 和 `db-name` 可直接使用普通文件路径，包括中文、空格、`#`、`%` 等字符。`GormSqlite()`、`GormSqliteByConfig()` 和首次建库流程统一创建父目录并转换文件 URI，兼容 Windows 盘符路径，调用方无需预先转义或修改配置。`db-name` 为 `:memory:` 或显式 `file:` URI 时沿用其语义；显式 URI 保留查询参数，初始化统一设置 WAL 和 5000 毫秒忙等待，默认使用一个连接。
+
 文件热更新只接受 JWT 有效期与刷新窗口、CORS 和验证码设置。数据库、Redis、日志、路径、路由、密钥、Cookie、代理与请求上限等修改需要重启；校验失败或涉及重启的文件变更不会替换当前快照。配置写入接口通过临时文件和重命名原子保存文件。
 
 默认 CORS 为白名单模式，需要配置前端 Origin 才能跨域读取响应。JWT Cookie 默认为 host-only、HttpOnly、SameSite=Lax；HTTPS 反向代理场景请设置 `cookie-secure: true`，同时显式配置可信代理。普通请求体上限为 16 MiB，上传请求为 32 MiB（包含 multipart/base64 编码开销），文件服务还会检查实际文件大小。

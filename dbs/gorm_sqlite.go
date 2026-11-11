@@ -2,15 +2,16 @@ package dbs
 
 import (
 	"fmt"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+
 	"github.com/google/uuid"
 	"github.com/wfu-work/nav-common-go-lib/configs"
 	"github.com/wfu-work/nav-common-go-lib/global"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"net/url"
-	"os"
-	"path/filepath"
-	"strings"
 )
 
 // GormSqlite 初始化Sqlite数据库
@@ -19,7 +20,7 @@ func GormSqlite() (*gorm.DB, error) {
 	return initSqliteDatabase(s)
 }
 
-// GormSqliteByConfig 初始化Sqlite数据库用过传入配置
+// GormSqliteByConfig 使用传入配置初始化 SQLite，不修改原配置。
 func GormSqliteByConfig(s configs.Sqlite) (*gorm.DB, error) {
 	return initSqliteDatabase(s)
 }
@@ -31,14 +32,14 @@ func initSqliteDatabase(s configs.Sqlite) (*gorm.DB, error) {
 	}
 	dsn := s.Dsn()
 	if dsn != ":memory:" && !strings.HasPrefix(dsn, "file:") {
-		if err := os.MkdirAll(filepath.Dir(dsn), 0755); err != nil {
-			return nil, err
-		}
 		absolute, err := filepath.Abs(dsn)
 		if err != nil {
 			return nil, err
 		}
-		dsn = (&url.URL{Scheme: "file", Path: filepath.ToSlash(absolute)}).String()
+		if err := os.MkdirAll(filepath.Dir(absolute), 0755); err != nil {
+			return nil, err
+		}
+		dsn = sqliteFileURI(filepath.ToSlash(absolute))
 	}
 	if dsn == ":memory:" {
 		dsn = "file:nav-memory-" + uuid.NewString() + "?mode=memory&cache=shared"
@@ -76,4 +77,13 @@ func initSqliteDatabase(s configs.Sqlite) (*gorm.DB, error) {
 		return nil, fmt.Errorf("sqlite busy_timeout initialization failed: %v", err)
 	}
 	return db, nil
+}
+
+func sqliteFileURI(absolute string) string {
+	// A Windows drive must be part of the URI path, not its authority:
+	// file:///D:/... rather than file://D:/... .
+	if !strings.HasPrefix(absolute, "/") {
+		absolute = "/" + absolute
+	}
+	return (&url.URL{Scheme: "file", Path: absolute}).String()
 }
