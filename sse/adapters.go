@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"mime"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -49,8 +50,15 @@ func (r *Recorder) HTTPMiddleware() gin.HandlerFunc {
 		c.Next()
 		elapsed := time.Since(started)
 		status := c.Writer.Status()
-		if status < 400 && len(c.Errors) == 0 && elapsed < time.Second {
-			return
+		if status < 400 && len(c.Errors) == 0 {
+			if elapsed < time.Second {
+				return
+			}
+			// SSE duration measures the connection lifetime, not request latency.
+			mediaType, _, err := mime.ParseMediaType(c.Writer.Header().Get("Content-Type"))
+			if err == nil && mediaType == "text/event-stream" {
+				return
+			}
 		}
 		e.Level = "warn"
 		if status >= 500 || len(c.Errors) > 0 {
